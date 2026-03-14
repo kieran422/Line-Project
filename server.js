@@ -34,6 +34,58 @@ app.post('/api/admin/users', (req, res) => {
   return res.json({ users });
 });
 
+// Admin delete user — removes profile and all owned elements
+app.post('/api/admin/delete-user', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+  const userId = req.body.userId;
+  if (!userId) return res.status(400).json({ error: 'missing userId' });
+
+  // Find and remove the profile
+  let removed = false;
+  for (const [email, profile] of profiles.entries()) {
+    if (profile.id === userId) {
+      profiles.delete(email);
+      removed = true;
+      break;
+    }
+  }
+  if (!removed) return res.status(404).json({ error: 'user not found' });
+
+  // Delete all lines owned by this user
+  const deletedIds = [];
+  for (const [id, line] of lines.entries()) {
+    if (line.authorId === userId) {
+      lines.delete(id);
+      deletedIds.push({ id, type: 'line' });
+    }
+  }
+
+  // Delete all frames owned by this user
+  for (const [id, frame] of frames.entries()) {
+    if (frame.authorId === userId) {
+      frames.delete(id);
+      deletedIds.push({ id, type: 'frame' });
+    }
+  }
+
+  // Delete pending delete requests from/about this user
+  for (const [id, req] of deleteRequests.entries()) {
+    if (req.requesterId === userId || req.elementAuthorId === userId) {
+      deleteRequests.delete(id);
+    }
+  }
+
+  saveProfiles();
+  saveState();
+
+  // Broadcast deletions to all connected clients
+  for (const d of deletedIds) {
+    io.emit('element-deleted', d);
+  }
+
+  return res.json({ ok: true, deleted: deletedIds.length });
+});
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

@@ -1141,11 +1141,13 @@ function initTools() {
       document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       selectedElement = null;
+      hoveredElement = null;
       hoverInsertPoint = null;
       justFinishedDrag = false;
       isDragging = false;
       isPanning = false;
       dragTarget = null;
+      hideTooltip();
       canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
       render();
     });
@@ -1364,6 +1366,28 @@ adminSubmit.addEventListener('click', () => {
 
 closeAdmin.addEventListener('click', () => adminPanel.classList.add('hidden'));
 
+// Event delegation for admin delete buttons
+adminUserList.addEventListener('click', (e) => {
+  const btn = e.target.closest('.admin-delete-btn');
+  if (!btn) return;
+  const userId = btn.dataset.userid;
+  const userName = btn.dataset.username;
+  if (!confirm(`Delete ${userName} and all their lines/frames? This cannot be undone.`)) return;
+  fetch('/api/admin/delete-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: 'all hail ai', userId })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      showToast(`${userName} deleted (${data.deleted} elements removed).`);
+      loadAdminUsers();
+    }
+  })
+  .catch(() => {});
+});
+
 function loadAdminUsers() {
   fetch('/api/admin/users', {
     method: 'POST',
@@ -1381,7 +1405,7 @@ function loadAdminUsers() {
     for (const u of data.users) {
       const div = document.createElement('div');
       div.className = 'admin-user-item';
-      div.innerHTML = `<div class="admin-user-info"><span class="admin-user-name">${u.name}</span><span class="admin-user-email">${u.email}</span></div><span class="admin-user-stats">${u.lines} line${u.lines !== 1 ? 's' : ''}, ${u.frames} frame${u.frames !== 1 ? 's' : ''}</span>`;
+      div.innerHTML = `<div class="admin-user-info"><span class="admin-user-name">${u.name}</span><span class="admin-user-email">${u.email}</span></div><div style="display:flex;align-items:center;gap:8px"><span class="admin-user-stats">${u.lines} line${u.lines !== 1 ? 's' : ''}, ${u.frames} frame${u.frames !== 1 ? 's' : ''}</span><button class="admin-delete-btn" data-userid="${u.id}" data-username="${u.name}" title="Delete user and all their elements">&times;</button></div>`;
       adminUserList.appendChild(div);
     }
   })
