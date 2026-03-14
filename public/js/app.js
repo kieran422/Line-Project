@@ -1246,7 +1246,8 @@ function doLogin() {
   const name = fullNameInput.value.trim(), email = emailInput.value.trim();
   let ok = true;
   if (!name) { fullNameInput.style.borderColor = '#cc2222'; ok = false; } else fullNameInput.style.borderColor = '';
-  if (!email || !email.includes('@')) { emailInput.style.borderColor = '#cc2222'; ok = false; } else emailInput.style.borderColor = '';
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailValid) { emailInput.style.borderColor = '#cc2222'; ok = false; showToast('Please enter a valid email address.'); } else emailInput.style.borderColor = '';
   if (!ok) return;
   loginScreen.classList.add('hidden'); appDiv.classList.remove('hidden');
   if (window._startMusic) window._startMusic();
