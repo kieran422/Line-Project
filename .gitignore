@@ -1,0 +1,4 @@
+node_modules/
+data/profiles.json
+data/state.json
+.DS_Store

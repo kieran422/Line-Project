@@ -1,0 +1,333 @@
+const express = require('express');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { Server } = require('socket.io');
+const { v4: uuidv4 } = require('uuid');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
+
+app.use(express.static('public'));
+
+// ── Persistence ─────────────────────────────────────────────────────────────
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
+
+function loadJSON(filepath, fallback) {
+  try {
+    if (fs.existsSync(filepath)) {
+      return JSON.parse(fs.readFileSync(filepath, 'utf8'));
+    }
+  } catch (e) {
+    console.error(`Error loading ${filepath}:`, e.message);
+  }
+  return fallback;
+}
+
+function saveJSON(filepath, data) {
+  try {
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.error(`Error saving ${filepath}:`, e.message);
+  }
+}
+
+// ── State ──────────────────────────────────────────────────────────────────────
+// Profiles: email → { id, email, name, color }
+const profiles = new Map();
+const loadedProfiles = loadJSON(PROFILES_FILE, []);
+for (const p of loadedProfiles) {
+  profiles.set(p.email, p);
+}
+
+// Active sessions: socketId → profileId
+const sessions = new Map();
+
+// Load persisted state
+const savedState = loadJSON(STATE_FILE, { lines: [], frames: [], deleteRequests: [], snapshots: [], totalElements: 0 });
+
+const lines = new Map();
+for (const l of savedState.lines) lines.set(l.id, l);
+
+const frames = new Map();
+for (const f of savedState.frames) frames.set(f.id, f);
+
+const deleteRequests = new Map();
+for (const r of savedState.deleteRequests) deleteRequests.set(r.id, r);
+
+const snapshots = savedState.snapshots || [];
+let totalElements = savedState.totalElements || 0;
+
+const COLORS = [
+  '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7be',
+  '#30b0c7', '#007aff', '#5856d6', '#af52de', '#ff2d55',
+  '#ff6b6b', '#ffa502', '#eccc68', '#7bed9f', '#70a1ff',
+  '#5352ed', '#ff4757', '#2ed573', '#1e90ff', '#3742fa',
+  '#e056fd', '#686de0', '#ffbe76', '#badc58', '#f9ca24',
+  '#6ab04c', '#eb4d4b', '#30336b', '#22a6b3', '#be2edd',
+  '#f0932b', '#c56cf0', '#7158e2', '#3dc1d3', '#e15f41',
+  '#fad390', '#6a89cc', '#82ccdd', '#b8e994', '#f8c291'
+];
+let colorIndex = profiles.size;
+
+function getNextColor() {
+  const color = COLORS[colorIndex % COLORS.length];
+  colorIndex++;
+  return color;
+}
+
+function saveProfiles() {
+  saveJSON(PROFILES_FILE, Array.from(profiles.values()));
+}
+
+function saveState() {
+  saveJSON(STATE_FILE, {
+    lines: Array.from(lines.values()),
+    frames: Array.from(frames.values()),
+    deleteRequests: Array.from(deleteRequests.values()),
+    snapshots,
+    totalElements
+  });
+}
+
+function getFullState() {
+  return {
+    lines: Array.from(lines.values()),
+    frames: Array.from(frames.values()),
+    deleteRequests: Array.from(deleteRequests.values()),
+    snapshots,
+    totalElements
+  };
+}
+
+function getOrCreateProfile(email, name) {
+  const normalized = email.toLowerCase().trim();
+  let profile = profiles.get(normalized);
+
+  if (profile) {
+    // Update name if changed
+    if (name && name !== profile.name) {
+      profile.name = name;
+      // Update name on all authored elements
+      for (const line of lines.values()) {
+        if (line.authorId === profile.id) line.authorName = name;
+      }
+      for (const frame of frames.values()) {
+        if (frame.authorId === profile.id) frame.authorName = name;
+      }
+      saveState();
+    }
+    saveProfiles();
+    return profile;
+  }
+
+  // New profile
+  profile = {
+    id: uuidv4(),
+    email: normalized,
+    name: name,
+    color: getNextColor()
+  };
+  profiles.set(normalized, profile);
+  saveProfiles();
+  return profile;
+}
+
+function maybeSnapshot() {
+  const snapshotThreshold = Math.floor(totalElements / 5) * 5;
+  const existingCount = snapshots.length;
+  const expectedCount = snapshotThreshold / 5;
+
+  if (expectedCount > existingCount && totalElements >= 5) {
+    snapshots.push({
+      id: snapshots.length,
+      elementCount: totalElements,
+      lines: Array.from(lines.values()).map(l => ({ ...l, points: [...l.points] })),
+      frames: Array.from(frames.values()).map(f => ({ ...f })),
+      timestamp: Date.now()
+    });
+    io.emit('snapshot-added', snapshots[snapshots.length - 1]);
+    saveState();
+  }
+}
+
+// ── Socket Events ──────────────────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  console.log(`Client connected: ${socket.id}`);
+
+  socket.on('join', (data) => {
+    const profile = getOrCreateProfile(data.email, data.name);
+
+    // Map this socket to the profile
+    sessions.set(socket.id, profile.id);
+
+    // Send the user their profile info + full state
+    socket.emit('joined', {
+      user: { id: profile.id, name: profile.name, email: profile.email, color: profile.color },
+      state: getFullState()
+    });
+    io.emit('user-joined', { id: profile.id, name: profile.name });
+    console.log(`User joined: ${profile.name} (${profile.email})`);
+  });
+
+  socket.on('place-line', (data) => {
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+    if (!profile) return;
+
+    // Each user can only place 1 line
+    const existingLine = Array.from(lines.values()).find(l => l.authorId === profile.id);
+    if (existingLine) return;
+
+    const line = {
+      id: uuidv4(),
+      authorId: profile.id,
+      authorName: profile.name,
+      color: profile.color,
+      points: data.points
+    };
+    lines.set(line.id, line);
+    totalElements++;
+    maybeSnapshot();
+    saveState();
+    io.emit('line-placed', line);
+    io.emit('element-count', totalElements);
+  });
+
+  socket.on('place-frame', (data) => {
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+    if (!profile) return;
+
+    const frame = {
+      id: uuidv4(),
+      authorId: profile.id,
+      authorName: profile.name,
+      x: data.x,
+      y: data.y,
+      width: data.width,
+      height: data.height,
+      type: data.type
+    };
+    frames.set(frame.id, frame);
+    totalElements++;
+    maybeSnapshot();
+    saveState();
+    io.emit('frame-placed', frame);
+    io.emit('element-count', totalElements);
+  });
+
+  socket.on('edit-line', (data) => {
+    const line = lines.get(data.id);
+    if (!line) return;
+    line.points = data.points;
+    saveState();
+    socket.broadcast.emit('line-updated', line);
+  });
+
+  socket.on('edit-frame', (data) => {
+    const frame = frames.get(data.id);
+    if (!frame) return;
+    frame.x = data.x;
+    frame.y = data.y;
+    saveState();
+    socket.broadcast.emit('frame-updated', frame);
+  });
+
+  socket.on('delete-own', (data) => {
+    const profileId = sessions.get(socket.id);
+    if (!profileId) return;
+
+    if (data.type === 'line') {
+      const line = lines.get(data.id);
+      if (line && line.authorId === profileId) {
+        lines.delete(data.id);
+        saveState();
+        io.emit('element-deleted', { id: data.id, type: 'line' });
+      }
+    } else if (data.type === 'frame') {
+      const frame = frames.get(data.id);
+      if (frame && frame.authorId === profileId) {
+        frames.delete(data.id);
+        saveState();
+        io.emit('element-deleted', { id: data.id, type: 'frame' });
+      }
+    }
+  });
+
+  socket.on('request-delete', (data) => {
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+    if (!profile) return;
+
+    const request = {
+      id: uuidv4(),
+      requesterId: profile.id,
+      requesterName: profile.name,
+      elementId: data.elementId,
+      elementType: data.elementType,
+      elementAuthorId: data.elementAuthorId,
+      elementAuthorName: data.elementAuthorName,
+      status: 'pending'
+    };
+    deleteRequests.set(request.id, request);
+    saveState();
+    io.emit('delete-request', request);
+  });
+
+  socket.on('approve-delete', (data) => {
+    const request = deleteRequests.get(data.requestId);
+    if (!request) return;
+
+    const profileId = sessions.get(socket.id);
+    if (!profileId) return;
+    if (request.elementAuthorId !== profileId) return;
+
+    request.status = 'approved';
+    if (request.elementType === 'line') lines.delete(request.elementId);
+    else frames.delete(request.elementId);
+
+    saveState();
+    io.emit('delete-approved', {
+      requestId: request.id,
+      elementId: request.elementId,
+      elementType: request.elementType
+    });
+  });
+
+  socket.on('deny-delete', (data) => {
+    const request = deleteRequests.get(data.requestId);
+    if (!request) return;
+
+    const profileId = sessions.get(socket.id);
+    if (!profileId) return;
+    if (request.elementAuthorId !== profileId) return;
+
+    request.status = 'denied';
+    saveState();
+    io.emit('delete-denied', { requestId: request.id });
+  });
+
+  socket.on('disconnect', () => {
+    const profileId = sessions.get(socket.id);
+    if (profileId) {
+      const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+      if (profile) {
+        console.log(`User disconnected: ${profile.name}`);
+        io.emit('user-left', { id: profile.id, name: profile.name });
+      }
+    }
+    sessions.delete(socket.id);
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Collaboration in Line running on http://localhost:${PORT}`);
+});

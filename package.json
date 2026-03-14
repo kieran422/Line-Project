@@ -1,0 +1,15 @@
+{
+  "name": "line-web",
+  "version": "1.0.0",
+  "description": "Collaborative LED art installation simulator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1"
+  }
+}
