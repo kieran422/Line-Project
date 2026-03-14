@@ -69,6 +69,7 @@ let viewingSnapshot = null;
 let canvas, ctx;
 let mouseX = 0, mouseY = 0;
 let toastTimer = null;
+let isAdmin = false;
 
 // ── DOM Elements ─────────────────────────────────────────────────────────────
 const loginScreen = document.getElementById('login-screen');
@@ -457,7 +458,7 @@ function drawSelectedHandles(dl) {
     const line = dl.find(l => l.id === selectedElement.id);
     if (line) {
       const atLimit = computeTotalLineLength(line.points) >= MAX_STRIP_LENGTH_FT - 0.05;
-      const isOthers = line.authorId !== currentUser?.id;
+      const isOthers = !isAdmin && line.authorId !== currentUser?.id;
       for (let i = 0; i < line.points.length; i++) {
         const p = gridToCanvas(line.points[i].x, line.points[i].y);
         const isEndpoint = (i === 0 || i === line.points.length - 1);
@@ -738,7 +739,7 @@ function onMouseMove(e) {
   if (isLineTool && notPlacing && selectedElement?.type === 'line') {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
-      const isOthers = selLine.authorId !== currentUser?.id;
+      const isOthers = !isAdmin && selLine.authorId !== currentUser?.id;
       if (hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers) >= 0) {
         canvas.style.cursor = 'grab';
         hoveredElement = { type: 'line', id: selLine.id, element: selLine };
@@ -831,7 +832,7 @@ function onMouseDown(e) {
   if (activeTool === 'line' && !isPlacingLine && selectedElement?.type === 'line') {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
-      const isOthers = selLine.authorId !== currentUser?.id;
+      const isOthers = !isAdmin && selLine.authorId !== currentUser?.id;
       const ptIdx = hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers);
       if (ptIdx >= 0) {
         isDragging = true;
@@ -904,7 +905,7 @@ function onClick(e) {
   if (selectedElement?.type === 'line') {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
-      const isOthers = selLine.authorId !== currentUser?.id;
+      const isOthers = !isAdmin && selLine.authorId !== currentUser?.id;
       if (hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers) >= 0) nearSelected = true;
       else if (hitTestLine(gp.x, gp.y, selLine, true)) nearSelected = true;
     }
@@ -1019,8 +1020,8 @@ function cancelFrame() { stagedFrame = null; frameStatusEl.classList.add('hidden
 function handleDelete(gp) {
   const hit = findHovered(gp.x, gp.y);
   if (!hit) return;
-  if (hit.element.authorId === currentUser.id) {
-    socket.emit('delete-own', { id: hit.id, type: hit.type });
+  if (hit.element.authorId === currentUser.id || isAdmin) {
+    socket.emit('delete-own', { id: hit.id, type: hit.type, admin: isAdmin });
   } else {
     socket.emit('request-delete', { elementId: hit.id, elementType: hit.type, elementAuthorId: hit.element.authorId, elementAuthorName: hit.element.authorName });
     showToast(`Delete request sent to ${hit.element.authorName}.`);
@@ -1320,6 +1321,72 @@ function exportPDF() {
 
 const pdfBtn = document.getElementById('pdf-download');
 pdfBtn.addEventListener('click', exportPDF);
+
+// ── Admin Panel ──────────────────────────────────────────────────────────────
+
+const adminToggle = document.getElementById('admin-toggle');
+const adminModal = document.getElementById('admin-modal');
+const adminPasswordInput = document.getElementById('admin-password');
+const adminSubmit = document.getElementById('admin-submit');
+const adminCancel = document.getElementById('admin-cancel');
+const adminPanel = document.getElementById('admin-panel');
+const adminUserList = document.getElementById('admin-user-list');
+const closeAdmin = document.getElementById('close-admin');
+
+adminToggle.addEventListener('click', () => {
+  if (isAdmin) {
+    loadAdminUsers();
+    adminPanel.classList.toggle('hidden');
+  } else {
+    adminModal.classList.remove('hidden');
+    adminPasswordInput.value = '';
+    adminPasswordInput.focus();
+  }
+});
+
+adminCancel.addEventListener('click', () => adminModal.classList.add('hidden'));
+adminPasswordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') adminSubmit.click(); });
+
+adminSubmit.addEventListener('click', () => {
+  if (adminPasswordInput.value.trim().toLowerCase() === 'all hail ai') {
+    isAdmin = true;
+    adminModal.classList.add('hidden');
+    adminToggle.style.borderColor = '#cc2222';
+    adminToggle.style.color = '#cc2222';
+    showToast('Admin mode activated.');
+    loadAdminUsers();
+    adminPanel.classList.remove('hidden');
+  } else {
+    adminPasswordInput.style.borderColor = '#cc2222';
+    showToast('Invalid passcode.');
+  }
+});
+
+closeAdmin.addEventListener('click', () => adminPanel.classList.add('hidden'));
+
+function loadAdminUsers() {
+  fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: 'all hail ai' })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.users) return;
+    adminUserList.innerHTML = '';
+    if (data.users.length === 0) {
+      adminUserList.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:20px;font-style:italic">No users</p>';
+      return;
+    }
+    for (const u of data.users) {
+      const div = document.createElement('div');
+      div.className = 'admin-user-item';
+      div.innerHTML = `<div class="admin-user-info"><span class="admin-user-name">${u.name}</span><span class="admin-user-email">${u.email}</span></div><span class="admin-user-stats">${u.lines} line${u.lines !== 1 ? 's' : ''}, ${u.frames} frame${u.frames !== 1 ? 's' : ''}</span>`;
+      adminUserList.appendChild(div);
+    }
+  })
+  .catch(() => {});
+}
 
 // ── Toggles ──────────────────────────────────────────────────────────────────
 

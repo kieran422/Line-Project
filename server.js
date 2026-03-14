@@ -23,6 +23,17 @@ app.post('/api/lookup', (req, res) => {
   return res.json({ found: false });
 });
 
+// Admin endpoint — returns all users (requires passcode)
+app.post('/api/admin/users', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+  const users = Array.from(profiles.values()).map(p => {
+    const userLines = Array.from(lines.values()).filter(l => l.authorId === p.id).length;
+    const userFrames = Array.from(frames.values()).filter(f => f.authorId === p.id).length;
+    return { id: p.id, name: p.name, email: p.email, lines: userLines, frames: userFrames };
+  });
+  return res.json({ users });
+});
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -298,16 +309,17 @@ io.on('connection', (socket) => {
     // Snapshot before this user's edit is applied
     if (profile) onEdit(profile.id, profile.name);
 
+    const isAdminUser = data.admin === true;
     if (data.type === 'line') {
       const line = lines.get(data.id);
-      if (line && line.authorId === profileId) {
+      if (line && (line.authorId === profileId || isAdminUser)) {
         lines.delete(data.id);
         saveState();
         io.emit('element-deleted', { id: data.id, type: 'line' });
       }
     } else if (data.type === 'frame') {
       const frame = frames.get(data.id);
-      if (frame && frame.authorId === profileId) {
+      if (frame && (frame.authorId === profileId || isAdminUser)) {
         frames.delete(data.id);
         saveState();
         io.emit('element-deleted', { id: data.id, type: 'frame' });
