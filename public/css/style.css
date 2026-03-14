@@ -52,7 +52,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow);
-  max-width: 540px;
+  max-width: 780px;
   width: 92%;
 }
 
