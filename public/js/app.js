@@ -10,24 +10,33 @@ const GRID_WIDTH_FT = 40;
 const GRID_HEIGHT_FT = 8;
 const SUPPORT_SPACING_FT = 4;
 const MESH_SPACING_FT = 0.5;
+const SNAP_FT = 1 / 12;              // 1 inch snap for fine placement
 const MAX_STRIP_LENGTH_FT = 20;
-const SMALL_FRAME_FT = 8 / 12;       // 8 inches → 0.667 feet
-const LARGE_FRAME_FT = 2;            // 2 feet
+const SMALL_FRAME_FT = 8 / 12;
+const LARGE_FRAME_FT = 2;
 const SAG_FACTOR = 0.12;
 const MIN_SAG_FT = 0.05;
 const CATENARY_POINTS = 30;
 const GRID_PADDING = 60;
 
-// Warm white LED color (less orange, more true warm white)
 const LED_COLOR = '#fff0d8';
 const LED_GLOW = '#ffe8c8';
+const LED_LINE_WIDTH = 0.8;           // reduced line weight
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 6;
 
 // ── State ────────────────────────────────────────────────────────────────────
 let socket = null;
 let currentUser = null;
-let scale = 1;
-let gridOffsetX = 0;
-let gridOffsetY = 0;
+
+// Zoom / Pan
+let baseScale = 1;                    // pixels per foot at zoom 1
+let zoomLevel = 1;
+let viewCenterX = GRID_WIDTH_FT / 2;
+let viewCenterY = GRID_HEIGHT_FT / 2;
+let isPanning = false;
+let panLastX = 0, panLastY = 0;
 
 let activeTool = 'select';
 let lines = [];
@@ -36,21 +45,22 @@ let deleteRequests = [];
 let snapshots = [];
 let totalElements = 0;
 
-// Line placement state
+// Line placement
 let isPlacingLine = false;
 let currentLinePoints = [];
 let currentLineUsed = 0;
 
-// Frame placement state (staged confirmation)
-let stagedFrame = null;  // { x, y, width, height, type }
+// Frame placement (staged)
+let stagedFrame = null;
 
-// Interaction state
+// Selection — only selected element shows handles
+let selectedElement = null;           // { type: 'line'|'frame', id }
+
+// Interaction
 let hoveredElement = null;
 let isDragging = false;
 let dragTarget = null;
-
-// Hover-to-insert-point state (Illustrator-style)
-let hoverInsertPoint = null; // { lineId, segmentIndex, x, y }
+let hoverInsertPoint = null;
 
 // Timeline
 let viewingSnapshot = null;
@@ -58,8 +68,6 @@ let viewingSnapshot = null;
 // Canvas
 let canvas, ctx;
 let mouseX = 0, mouseY = 0;
-
-// Toast timeout
 let toastTimer = null;
 
 // ── DOM Elements ─────────────────────────────────────────────────────────────
@@ -91,23 +99,34 @@ const notifList = document.getElementById('notifications-list');
 const closeNotifBtn = document.getElementById('close-notifications');
 const timelineTrack = document.getElementById('timeline-track');
 const canvasContainer = document.getElementById('canvas-container');
+const zoomSlider = document.getElementById('zoom-slider');
+const zoomLabel = document.getElementById('zoom-label');
 
-// ── Utility Functions ────────────────────────────────────────────────────────
+// ── Utility ──────────────────────────────────────────────────────────────────
 
 function dist(x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function feetToPixel(ft) { return ft * scale; }
-function pixelToFeet(px) { return px / scale; }
+function effScale() { return baseScale * zoomLevel; }
+function feetToPixel(ft) { return ft * effScale(); }
+function pixelToFeet(px) { return px / effScale(); }
 
 function gridToCanvas(fx, fy) {
-  return { x: gridOffsetX + fx * scale, y: gridOffsetY + fy * scale };
+  const s = effScale();
+  return {
+    x: canvas.width / 2 + (fx - viewCenterX) * s,
+    y: canvas.height / 2 + (fy - viewCenterY) * s
+  };
 }
 
 function canvasToGrid(cx, cy) {
-  return { x: (cx - gridOffsetX) / scale, y: (cy - gridOffsetY) / scale };
+  const s = effScale();
+  return {
+    x: (cx - canvas.width / 2) / s + viewCenterX,
+    y: (cy - canvas.height / 2) / s + viewCenterY
+  };
 }
 
 function clampToGrid(gx, gy) {
@@ -119,8 +138,8 @@ function clampToGrid(gx, gy) {
 
 function snapToMesh(gx, gy) {
   return {
-    x: Math.round(gx / MESH_SPACING_FT) * MESH_SPACING_FT,
-    y: Math.round(gy / MESH_SPACING_FT) * MESH_SPACING_FT
+    x: Math.round(gx / SNAP_FT) * SNAP_FT,
+    y: Math.round(gy / SNAP_FT) * SNAP_FT
   };
 }
 
@@ -135,48 +154,42 @@ function userHasPlacedLine() {
   return lines.some(l => l.authorId === currentUser?.id);
 }
 
+function isSelected(type, id) {
+  return selectedElement && selectedElement.type === type && selectedElement.id === id;
+}
+
 // ── Catenary / Gravity Physics ───────────────────────────────────────────────
 
 function computeSegmentCurve(p1, p2, numPoints) {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const hDist = Math.abs(dx);
-  const sag = Math.max(hDist * SAG_FACTOR, MIN_SAG_FT);
-
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const sag = Math.max(Math.abs(dx) * SAG_FACTOR, MIN_SAG_FT);
   const points = [];
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
-    const x = p1.x + t * dx;
-    const y = p1.y + t * dy + sag * 4 * t * (1 - t);
-    points.push({ x, y });
+    points.push({ x: p1.x + t * dx, y: p1.y + t * dy + sag * 4 * t * (1 - t) });
   }
   return points;
 }
 
-function computeLineCurve(attachmentPoints) {
-  if (attachmentPoints.length < 2) return [];
-  const allPoints = [];
-  for (let i = 0; i < attachmentPoints.length - 1; i++) {
-    const segPoints = computeSegmentCurve(
-      attachmentPoints[i], attachmentPoints[i + 1], CATENARY_POINTS
-    );
-    if (i > 0) segPoints.shift();
-    allPoints.push(...segPoints);
+function computeLineCurve(pts) {
+  if (pts.length < 2) return [];
+  const all = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const seg = computeSegmentCurve(pts[i], pts[i + 1], CATENARY_POINTS);
+    if (i > 0) seg.shift();
+    all.push(...seg);
   }
-  return allPoints;
+  return all;
 }
 
 function computeArcLength(points) {
   let len = 0;
-  for (let i = 1; i < points.length; i++) {
-    len += dist(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
-  }
+  for (let i = 1; i < points.length; i++) len += dist(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
   return len;
 }
 
 function computeSegmentArcLength(p1, p2) {
-  const curve = computeSegmentCurve(p1, p2, CATENARY_POINTS);
-  return computeArcLength(curve);
+  return computeArcLength(computeSegmentCurve(p1, p2, CATENARY_POINTS));
 }
 
 // ── Canvas Setup ─────────────────────────────────────────────────────────────
@@ -189,19 +202,43 @@ function initCanvas() {
 }
 
 function resizeCanvas() {
-  const cw = canvasContainer.clientWidth;
-  const ch = canvasContainer.clientHeight;
+  const cw = canvasContainer.clientWidth, ch = canvasContainer.clientHeight;
   canvas.width = cw;
   canvas.height = ch;
-
-  const scaleX = (cw - GRID_PADDING * 2) / GRID_WIDTH_FT;
-  const scaleY = (ch - GRID_PADDING * 2) / GRID_HEIGHT_FT;
-  scale = Math.min(scaleX, scaleY);
-
-  gridOffsetX = (cw - GRID_WIDTH_FT * scale) / 2;
-  gridOffsetY = (ch - GRID_HEIGHT_FT * scale) / 2;
-
+  const sx = (cw - GRID_PADDING * 2) / GRID_WIDTH_FT;
+  const sy = (ch - GRID_PADDING * 2) / GRID_HEIGHT_FT;
+  baseScale = Math.min(sx, sy);
   render();
+}
+
+// ── Zoom ─────────────────────────────────────────────────────────────────────
+
+function setZoom(newZoom, centerCx, centerCy) {
+  newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+  if (centerCx !== undefined && centerCy !== undefined) {
+    // Keep point under cursor fixed
+    const gp = canvasToGrid(centerCx, centerCy);
+    zoomLevel = newZoom;
+    viewCenterX = gp.x - (centerCx - canvas.width / 2) / effScale();
+    viewCenterY = gp.y - (centerCy - canvas.height / 2) / effScale();
+  } else {
+    zoomLevel = newZoom;
+  }
+  zoomSlider.value = Math.round(zoomLevel * 100);
+  zoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
+  render();
+}
+
+function initZoom() {
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.002;
+    setZoom(zoomLevel * (1 + delta), mouseX, mouseY);
+  }, { passive: false });
+
+  zoomSlider.addEventListener('input', () => {
+    setZoom(parseInt(zoomSlider.value) / 100);
+  });
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -210,182 +247,153 @@ function render() {
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const displayLines = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.lines || [] : lines;
-  const displayFrames = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.frames || [] : frames;
+  const dl = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.lines || [] : lines;
+  const df = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.frames || [] : frames;
 
   drawGrid();
-  drawLines(displayLines);
-  drawFrames(displayFrames, displayLines);
+  drawLines(dl);
+  drawFrames(df, dl);
   drawPreview();
-  drawAttachmentPointHandles(displayLines);
+  drawSelectedHandles(dl);
   drawInsertPointIndicator();
 }
 
 function drawGrid() {
-  const tl = gridToCanvas(0, 0);
-  const br = gridToCanvas(GRID_WIDTH_FT, GRID_HEIGHT_FT);
+  const tl = gridToCanvas(0, 0), br = gridToCanvas(GRID_WIDTH_FT, GRID_HEIGHT_FT);
 
   ctx.fillStyle = '#050508';
   ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 
-  // Fine mesh grid
+  // Fine mesh
   ctx.strokeStyle = '#0e0e12';
   ctx.lineWidth = 0.5;
   for (let x = 0; x <= GRID_WIDTH_FT; x += MESH_SPACING_FT) {
-    const p = gridToCanvas(x, 0);
-    const q = gridToCanvas(x, GRID_HEIGHT_FT);
+    const p = gridToCanvas(x, 0), q = gridToCanvas(x, GRID_HEIGHT_FT);
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
   }
   for (let y = 0; y <= GRID_HEIGHT_FT; y += MESH_SPACING_FT) {
-    const p = gridToCanvas(0, y);
-    const q = gridToCanvas(GRID_WIDTH_FT, y);
+    const p = gridToCanvas(0, y), q = gridToCanvas(GRID_WIDTH_FT, y);
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
   }
 
-  // Structural supports every 4 feet
+  // Structural supports
   ctx.strokeStyle = '#252530';
   ctx.lineWidth = 2.5;
   for (let x = 0; x <= GRID_WIDTH_FT; x += SUPPORT_SPACING_FT) {
-    const p = gridToCanvas(x, 0);
-    const q = gridToCanvas(x, GRID_HEIGHT_FT);
+    const p = gridToCanvas(x, 0), q = gridToCanvas(x, GRID_HEIGHT_FT);
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
   }
 
-  // Border frame
+  // Border
   ctx.strokeStyle = '#333340';
   ctx.lineWidth = 3;
   ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 }
 
-function drawLines(displayLines) {
-  for (const line of displayLines) {
+function drawLines(dl) {
+  for (const line of dl) {
     if (line.points.length < 2) continue;
-
     const curve = computeLineCurve(line.points);
-    const isHovered = hoveredElement?.type === 'line' && hoveredElement.id === line.id;
+    const hovered = hoveredElement?.type === 'line' && hoveredElement.id === line.id;
+    const sel = isSelected('line', line.id);
 
     ctx.save();
-
-    // Outer glow
     ctx.shadowColor = LED_GLOW;
-    ctx.shadowBlur = isHovered ? 14 : 8;
+    ctx.shadowBlur = (hovered || sel) ? 10 : 6;
     ctx.strokeStyle = LED_COLOR;
-    ctx.lineWidth = isHovered ? 2.5 : 1.5;
+    ctx.lineWidth = (hovered || sel) ? LED_LINE_WIDTH * 1.4 : LED_LINE_WIDTH;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
     for (let i = 0; i < curve.length; i++) {
       const p = gridToCanvas(curve[i].x, curve[i].y);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
     ctx.stroke();
 
-    // Bright inner core
-    ctx.shadowBlur = 3;
-    ctx.globalAlpha = 0.5;
+    // Inner core
+    ctx.shadowBlur = 2;
+    ctx.globalAlpha = 0.4;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 0.5;
+    ctx.lineWidth = 0.3;
     ctx.stroke();
-
     ctx.restore();
   }
 }
 
-function drawFrames(displayFrames, displayLines) {
-  for (const frame of displayFrames) {
-    const fx1 = frame.x - frame.width / 2;
-    const fy1 = frame.y - frame.height / 2;
-    const fx2 = frame.x + frame.width / 2;
-    const fy2 = frame.y + frame.height / 2;
+function drawFrames(df, dl) {
+  for (const frame of df) {
+    const fx1 = frame.x - frame.width / 2, fy1 = frame.y - frame.height / 2;
+    const fx2 = frame.x + frame.width / 2, fy2 = frame.y + frame.height / 2;
     const tl = gridToCanvas(fx1, fy1);
-    const w = feetToPixel(frame.width);
-    const h = feetToPixel(frame.height);
-    const isHovered = hoveredElement?.type === 'frame' && hoveredElement.id === frame.id;
+    const w = feetToPixel(frame.width), h = feetToPixel(frame.height);
+    const hovered = hoveredElement?.type === 'frame' && hoveredElement.id === frame.id;
+    const sel = isSelected('frame', frame.id);
 
     ctx.save();
 
-    // Opaque white fabric base — real fabric blocks most direct light
-    ctx.fillStyle = isHovered ? '#e8e6e2' : '#e0ddd8';
+    // Off-white fabric base
+    ctx.fillStyle = (hovered || sel) ? '#d0cdc6' : '#c8c4bc';
     ctx.fillRect(tl.x, tl.y, w, h);
 
-    // ── Realistic light diffusion through fabric ──
-    // Clip to frame bounds
+    // ── Diffusion: pure white feathered line ──
     ctx.save();
     ctx.beginPath();
     ctx.rect(tl.x, tl.y, w, h);
     ctx.clip();
 
-    for (const line of displayLines) {
+    for (const line of dl) {
       if (line.points.length < 2) continue;
       const curve = computeLineCurve(line.points);
 
-      // Collect curve points that fall within or near the frame
-      const nearPoints = [];
+      // Collect points within frame
+      const near = [];
       for (const pt of curve) {
-        if (pt.x >= fx1 - 0.8 && pt.x <= fx2 + 0.8 &&
-            pt.y >= fy1 - 0.8 && pt.y <= fy2 + 0.8) {
-          nearPoints.push(gridToCanvas(pt.x, pt.y));
+        if (pt.x >= fx1 - 0.3 && pt.x <= fx2 + 0.3 &&
+            pt.y >= fy1 - 0.3 && pt.y <= fy2 + 0.3) {
+          near.push(gridToCanvas(pt.x, pt.y));
         }
       }
-      if (nearPoints.length === 0) continue;
+      if (near.length < 2) continue;
 
-      // Pass 1: Very wide, very soft ambient scatter (simulates light bouncing inside fabric)
-      const scatterRadius = feetToPixel(0.7);
-      for (let i = 0; i < nearPoints.length; i += 3) {
-        const p = nearPoints[i];
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, scatterRadius);
-        grad.addColorStop(0, 'rgba(255, 240, 216, 0.12)');
-        grad.addColorStop(0.4, 'rgba(255, 235, 200, 0.06)');
-        grad.addColorStop(1, 'rgba(255, 230, 190, 0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(p.x - scatterRadius, p.y - scatterRadius, scatterRadius * 2, scatterRadius * 2);
+      // Build the sub-path
+      function strokeNear() {
+        ctx.beginPath();
+        for (let i = 0; i < near.length; i++) {
+          if (i === 0) ctx.moveTo(near[i].x, near[i].y);
+          else ctx.lineTo(near[i].x, near[i].y);
+        }
+        ctx.stroke();
       }
 
-      // Pass 2: Medium diffuse glow (main visible diffusion halo)
-      const medRadius = feetToPixel(0.4);
-      for (let i = 0; i < nearPoints.length; i += 2) {
-        const p = nearPoints[i];
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, medRadius);
-        grad.addColorStop(0, 'rgba(255, 243, 220, 0.22)');
-        grad.addColorStop(0.3, 'rgba(255, 238, 210, 0.12)');
-        grad.addColorStop(0.7, 'rgba(255, 232, 200, 0.04)');
-        grad.addColorStop(1, 'rgba(255, 228, 195, 0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(p.x - medRadius, p.y - medRadius, medRadius * 2, medRadius * 2);
-      }
-
-      // Pass 3: Tight bright core (where fabric is thinnest / light strongest)
-      const coreRadius = feetToPixel(0.15);
-      for (const p of nearPoints) {
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, coreRadius);
-        grad.addColorStop(0, 'rgba(255, 248, 235, 0.3)');
-        grad.addColorStop(0.5, 'rgba(255, 242, 220, 0.12)');
-        grad.addColorStop(1, 'rgba(255, 238, 210, 0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(p.x - coreRadius, p.y - coreRadius, coreRadius * 2, coreRadius * 2);
-      }
-
-      // Pass 4: Blurred line stroke for continuous glow path
-      ctx.shadowColor = 'rgba(255, 240, 216, 0.6)';
-      ctx.shadowBlur = 35;
-      ctx.strokeStyle = 'rgba(255, 243, 225, 0.08)';
-      ctx.lineWidth = feetToPixel(0.25);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.beginPath();
-      for (let i = 0; i < nearPoints.length; i++) {
-        if (i === 0) ctx.moveTo(nearPoints[i].x, nearPoints[i].y);
-        else ctx.lineTo(nearPoints[i].x, nearPoints[i].y);
-      }
-      ctx.stroke();
 
-      // Pass 5: Even wider shadow-only stroke for outermost haze
-      ctx.shadowBlur = 60;
-      ctx.strokeStyle = 'rgba(255, 240, 216, 0.04)';
-      ctx.lineWidth = feetToPixel(0.5);
-      ctx.stroke();
+      // Outer feather (wide, very soft)
+      ctx.shadowColor = 'rgba(255,255,255,0.4)';
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = LED_LINE_WIDTH * 5;
+      strokeNear();
+
+      // Mid feather
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = LED_LINE_WIDTH * 3;
+      strokeNear();
+
+      // Core — pure white at 1.5× line weight
+      ctx.shadowBlur = 5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = LED_LINE_WIDTH * 1.5;
+      strokeNear();
+
+      // Bright center
+      ctx.shadowBlur = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = LED_LINE_WIDTH * 0.8;
+      strokeNear();
 
       ctx.shadowBlur = 0;
     }
@@ -393,25 +401,22 @@ function drawFrames(displayFrames, displayLines) {
     ctx.restore(); // unclip
 
     // Frame border
-    ctx.strokeStyle = isHovered ? '#b0b0b0' : '#707070';
-    ctx.lineWidth = isHovered ? 2 : 1.5;
+    ctx.strokeStyle = (hovered || sel) ? '#a0a0a0' : '#606060';
+    ctx.lineWidth = (hovered || sel) ? 2 : 1.5;
     ctx.strokeRect(tl.x, tl.y, w, h);
 
     ctx.restore();
   }
 }
 
-function drawAttachmentPointHandles(displayLines) {
-  const showHandles = activeTool === 'select' || activeTool === 'line';
-  if (!showHandles && !isPlacingLine) return;
-
-  // Committed line handles
-  if (showHandles) {
-    for (const line of displayLines) {
+function drawSelectedHandles(dl) {
+  // Only draw handles for the selected line
+  if (selectedElement?.type === 'line') {
+    const line = dl.find(l => l.id === selectedElement.id);
+    if (line) {
       for (let i = 0; i < line.points.length; i++) {
         const p = gridToCanvas(line.points[i].x, line.points[i].y);
-
-        ctx.fillStyle = '#222222';
+        ctx.fillStyle = '#111111';
         ctx.strokeStyle = LED_COLOR;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -439,133 +444,85 @@ function drawAttachmentPointHandles(displayLines) {
 
 function drawInsertPointIndicator() {
   if (!hoverInsertPoint) return;
-
   const p = gridToCanvas(hoverInsertPoint.x, hoverInsertPoint.y);
-
-  // "+" marker
   ctx.save();
   ctx.strokeStyle = LED_COLOR;
   ctx.lineWidth = 2;
   ctx.shadowColor = LED_GLOW;
   ctx.shadowBlur = 6;
-
-  // Circle
+  ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.stroke();
   ctx.beginPath();
-  ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+  ctx.moveTo(p.x - 4, p.y); ctx.lineTo(p.x + 4, p.y);
+  ctx.moveTo(p.x, p.y - 4); ctx.lineTo(p.x, p.y + 4);
   ctx.stroke();
-
-  // Plus sign
-  ctx.beginPath();
-  ctx.moveTo(p.x - 4, p.y);
-  ctx.lineTo(p.x + 4, p.y);
-  ctx.moveTo(p.x, p.y - 4);
-  ctx.lineTo(p.x, p.y + 4);
-  ctx.stroke();
-
   ctx.restore();
 }
 
 function drawPreview() {
-  // Preview line being placed
+  // Line preview
   if (isPlacingLine && currentLinePoints.length > 0) {
     const pts = [...currentLinePoints];
-    const gridMouse = canvasToGrid(mouseX, mouseY);
-    const snapped = snapToMesh(gridMouse.x, gridMouse.y);
-    const clamped = clampToGrid(snapped.x, snapped.y);
-
+    const gm = canvasToGrid(mouseX, mouseY);
+    const clamped = clampToGrid(snapToMesh(gm.x, gm.y).x, snapToMesh(gm.x, gm.y).y);
     const lastPt = pts[pts.length - 1];
-    const previewCurve = computeSegmentCurve(lastPt, clamped, CATENARY_POINTS);
-    const previewLen = computeArcLength(previewCurve);
-    const wouldExceed = currentLineUsed + previewLen > MAX_STRIP_LENGTH_FT;
+    const pLen = computeArcLength(computeSegmentCurve(lastPt, clamped, CATENARY_POINTS));
+    const exceed = currentLineUsed + pLen > MAX_STRIP_LENGTH_FT;
 
-    // Draw committed segments of in-progress line
     if (pts.length >= 2) {
       const curve = computeLineCurve(pts);
       ctx.save();
-      ctx.shadowColor = LED_GLOW;
-      ctx.shadowBlur = 8;
-      ctx.strokeStyle = LED_COLOR;
-      ctx.lineWidth = 1.5;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalAlpha = 0.6;
+      ctx.shadowColor = LED_GLOW; ctx.shadowBlur = 6;
+      ctx.strokeStyle = LED_COLOR; ctx.lineWidth = LED_LINE_WIDTH;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = 0.6;
       ctx.beginPath();
       for (let i = 0; i < curve.length; i++) {
         const p = gridToCanvas(curve[i].x, curve[i].y);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
       }
-      ctx.stroke();
-      ctx.restore();
+      ctx.stroke(); ctx.restore();
     }
 
-    // Preview segment to cursor
     ctx.save();
     ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = wouldExceed ? '#cc2222' : LED_COLOR;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.45;
-    ctx.lineCap = 'round';
-
+    ctx.strokeStyle = exceed ? '#cc2222' : LED_COLOR;
+    ctx.lineWidth = 0.6; ctx.globalAlpha = 0.45; ctx.lineCap = 'round';
     const segPts = computeSegmentCurve(lastPt, clamped, CATENARY_POINTS);
     ctx.beginPath();
     for (let i = 0; i < segPts.length; i++) {
       const p = gridToCanvas(segPts[i].x, segPts[i].y);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
-    ctx.stroke();
-    ctx.restore();
+    ctx.stroke(); ctx.restore();
 
-    // Preview dot at cursor
     const cp = gridToCanvas(clamped.x, clamped.y);
-    ctx.save();
-    ctx.globalAlpha = 0.4;
-    ctx.fillStyle = wouldExceed ? '#cc2222' : LED_COLOR;
-    ctx.beginPath();
-    ctx.arc(cp.x, cp.y, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.save(); ctx.globalAlpha = 0.4;
+    ctx.fillStyle = exceed ? '#cc2222' : LED_COLOR;
+    ctx.beginPath(); ctx.arc(cp.x, cp.y, 3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
-  // Staged frame preview (confirmed position, awaiting commit)
+  // Staged frame
   if (stagedFrame) {
     const tl = gridToCanvas(stagedFrame.x - stagedFrame.width / 2, stagedFrame.y - stagedFrame.height / 2);
-    const w = feetToPixel(stagedFrame.width);
-    const h = feetToPixel(stagedFrame.height);
-
-    ctx.save();
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = 'rgba(220,220,220,0.6)';
-    ctx.fillRect(tl.x, tl.y, w, h);
-    ctx.strokeStyle = '#b0b0b0';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(tl.x, tl.y, w, h);
-    ctx.restore();
+    const w = feetToPixel(stagedFrame.width), h = feetToPixel(stagedFrame.height);
+    ctx.save(); ctx.globalAlpha = 0.7;
+    ctx.fillStyle = 'rgba(200,196,188,0.6)'; ctx.fillRect(tl.x, tl.y, w, h);
+    ctx.strokeStyle = '#a0a0a0'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.strokeRect(tl.x, tl.y, w, h); ctx.restore();
   }
 
-  // Free-floating frame preview following cursor (before staging)
+  // Cursor-following frame preview
   if ((activeTool === 'small-frame' || activeTool === 'large-frame') && !stagedFrame) {
-    const frameType = activeTool === 'small-frame' ? 'small' : 'large';
-    const size = frameType === 'small' ? SMALL_FRAME_FT : LARGE_FRAME_FT;
-    const gp = canvasToGrid(mouseX, mouseY);
-    const snapped = snapToMesh(gp.x, gp.y);
-    const clamped = clampToGrid(snapped.x, snapped.y);
-
-    const tl = gridToCanvas(clamped.x - size / 2, clamped.y - size / 2);
-    const w = feetToPixel(size);
-    const h = feetToPixel(size);
-
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = 'rgba(200,200,200,0.5)';
-    ctx.fillRect(tl.x, tl.y, w, h);
-    ctx.strokeStyle = '#999999';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeRect(tl.x, tl.y, w, h);
-    ctx.restore();
+    const size = activeTool === 'small-frame' ? SMALL_FRAME_FT : LARGE_FRAME_FT;
+    const gm = canvasToGrid(mouseX, mouseY);
+    const s = snapToMesh(gm.x, gm.y);
+    const c = clampToGrid(s.x, s.y);
+    const tl = gridToCanvas(c.x - size / 2, c.y - size / 2);
+    const w = feetToPixel(size), h = feetToPixel(size);
+    ctx.save(); ctx.globalAlpha = 0.3;
+    ctx.fillStyle = 'rgba(190,186,178,0.5)'; ctx.fillRect(tl.x, tl.y, w, h);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+    ctx.strokeRect(tl.x, tl.y, w, h); ctx.restore();
   }
 }
 
@@ -573,87 +530,64 @@ function drawPreview() {
 
 function hitTestLine(gx, gy, line) {
   const curve = computeLineCurve(line.points);
-  const threshold = pixelToFeet(8);
+  const thresh = pixelToFeet(8);
   for (let i = 1; i < curve.length; i++) {
-    const d = distToSegment(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y);
-    if (d < threshold) return true;
+    if (distToSeg(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y) < thresh) return true;
   }
   return false;
 }
 
-function hitTestFrame(gx, gy, frame) {
-  const halfW = frame.width / 2;
-  const halfH = frame.height / 2;
-  return gx >= frame.x - halfW && gx <= frame.x + halfW &&
-         gy >= frame.y - halfH && gy <= frame.y + halfH;
+function hitTestFrame(gx, gy, f) {
+  return gx >= f.x - f.width / 2 && gx <= f.x + f.width / 2 &&
+         gy >= f.y - f.height / 2 && gy <= f.y + f.height / 2;
 }
 
-function hitTestAttachmentPoint(gx, gy, line) {
-  const threshold = pixelToFeet(10);
+function hitTestAttachPt(gx, gy, line) {
+  const thresh = pixelToFeet(10);
   for (let i = 0; i < line.points.length; i++) {
-    if (dist(gx, gy, line.points[i].x, line.points[i].y) < threshold) {
-      return i;
-    }
+    if (dist(gx, gy, line.points[i].x, line.points[i].y) < thresh) return i;
   }
   return -1;
 }
 
-function distToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
+function distToSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return dist(px, py, x1, y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
   return dist(px, py, x1 + t * dx, y1 + t * dy);
 }
 
-function projectOntoSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
+function projOnSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return 0;
   return Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
 }
 
-function findHoveredElement(gx, gy) {
-  const displayLines = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.lines || [] : lines;
-  const displayFrames = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.frames || [] : frames;
-
-  for (let i = displayFrames.length - 1; i >= 0; i--) {
-    if (hitTestFrame(gx, gy, displayFrames[i])) {
-      return { type: 'frame', id: displayFrames[i].id, element: displayFrames[i] };
-    }
+function findHovered(gx, gy) {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (hitTestFrame(gx, gy, frames[i])) return { type: 'frame', id: frames[i].id, element: frames[i] };
   }
-  for (let i = displayLines.length - 1; i >= 0; i--) {
-    if (hitTestLine(gx, gy, displayLines[i])) {
-      return { type: 'line', id: displayLines[i].id, element: displayLines[i] };
-    }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (hitTestLine(gx, gy, lines[i])) return { type: 'line', id: lines[i].id, element: lines[i] };
   }
   return null;
 }
 
-// Find the nearest point on a line's curve for inserting a new mount point
-function findNearestCurveInsertPoint(gx, gy, line) {
-  let minDist = Infinity;
-  let bestPoint = null;
-  let bestSegment = -1;
-
-  for (let seg = 0; seg < line.points.length - 1; seg++) {
-    const curve = computeSegmentCurve(line.points[seg], line.points[seg + 1], CATENARY_POINTS);
+function findInsertPoint(gx, gy, line) {
+  let minD = Infinity, best = null, bestSeg = -1;
+  for (let s = 0; s < line.points.length - 1; s++) {
+    const curve = computeSegmentCurve(line.points[s], line.points[s + 1], CATENARY_POINTS);
     for (let i = 1; i < curve.length; i++) {
-      const d = distToSegment(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y);
-      if (d < minDist) {
-        minDist = d;
-        const t = projectOntoSegment(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y);
-        bestPoint = {
-          x: curve[i - 1].x + t * (curve[i].x - curve[i - 1].x),
-          y: curve[i - 1].y + t * (curve[i].y - curve[i - 1].y)
-        };
-        bestSegment = seg;
+      const d = distToSeg(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y);
+      if (d < minD) {
+        minD = d;
+        const t = projOnSeg(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y);
+        best = { x: curve[i - 1].x + t * (curve[i].x - curve[i - 1].x), y: curve[i - 1].y + t * (curve[i].y - curve[i - 1].y) };
+        bestSeg = s;
       }
     }
   }
-
-  return { dist: minDist, point: bestPoint, segmentIndex: bestSegment };
+  return { dist: minD, point: best, segmentIndex: bestSeg };
 }
 
 // ── Input Handling ───────────────────────────────────────────────────────────
@@ -672,232 +606,207 @@ function onMouseMove(e) {
   mouseY = e.clientY - rect.top;
   const gp = canvasToGrid(mouseX, mouseY);
 
-  // Dragging
-  if (isDragging && dragTarget) {
-    const snapped = snapToMesh(gp.x, gp.y);
-    const clamped = clampToGrid(snapped.x, snapped.y);
-
-    if (dragTarget.type === 'line-point') {
-      const line = lines.find(l => l.id === dragTarget.id);
-      if (line) {
-        line.points[dragTarget.pointIndex] = { x: clamped.x, y: clamped.y };
-        socket.emit('edit-line', { id: line.id, points: line.points });
-      }
-    } else if (dragTarget.type === 'frame') {
-      const frame = frames.find(f => f.id === dragTarget.id);
-      if (frame) {
-        frame.x = clamped.x;
-        frame.y = clamped.y;
-        socket.emit('edit-frame', { id: frame.id, x: frame.x, y: frame.y });
-      }
-    }
+  // Panning
+  if (isPanning) {
+    const dx = mouseX - panLastX, dy = mouseY - panLastY;
+    viewCenterX -= dx / effScale();
+    viewCenterY -= dy / effScale();
+    panLastX = mouseX; panLastY = mouseY;
     render();
     return;
   }
 
-  // Reset hover insert point
-  hoverInsertPoint = null;
-
-  const canInsertPoint = (activeTool === 'select' || activeTool === 'line') && !isPlacingLine;
-
-  // Hover detection for select/line tool (includes insert-point detection)
-  if (canInsertPoint) {
-    const prev = hoveredElement;
-
-    // First check if near an existing attachment point
-    let nearAttachmentPoint = false;
-    for (const line of lines) {
-      if (hitTestAttachmentPoint(gp.x, gp.y, line) >= 0) {
-        nearAttachmentPoint = true;
-        break;
-      }
+  // Dragging
+  if (isDragging && dragTarget) {
+    const s = snapToMesh(gp.x, gp.y);
+    const c = clampToGrid(s.x, s.y);
+    if (dragTarget.type === 'line-point') {
+      const line = lines.find(l => l.id === dragTarget.id);
+      if (line) { line.points[dragTarget.pointIndex] = { x: c.x, y: c.y }; socket.emit('edit-line', { id: line.id, points: line.points }); }
+    } else if (dragTarget.type === 'frame') {
+      const frame = frames.find(f => f.id === dragTarget.id);
+      if (frame) { frame.x = c.x; frame.y = c.y; socket.emit('edit-frame', { id: frame.id, x: frame.x, y: frame.y }); }
     }
-
-    if (nearAttachmentPoint) {
-      canvas.style.cursor = 'grab';
-      hoveredElement = findHoveredElement(gp.x, gp.y);
-    } else {
-      // Check if hovering over a line's curve (for insert point)
-      let foundInsert = false;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        if (line.points.length < 2) continue;
-
-        const result = findNearestCurveInsertPoint(gp.x, gp.y, line);
-        if (result.dist < pixelToFeet(10) && result.point) {
-          hoverInsertPoint = {
-            lineId: line.id,
-            segmentIndex: result.segmentIndex,
-            x: result.point.x,
-            y: result.point.y
-          };
-          canvas.style.cursor = 'copy';
-          foundInsert = true;
-          hoveredElement = { type: 'line', id: line.id, element: line };
-          break;
-        }
-      }
-
-      if (!foundInsert) {
-        hoveredElement = findHoveredElement(gp.x, gp.y);
-        canvas.style.cursor = hoveredElement ? 'pointer' : 'crosshair';
-      }
-    }
-
-    if (hoveredElement) {
-      showTooltip(e.clientX, e.clientY, hoveredElement.element.authorName);
-    } else {
-      hideTooltip();
-    }
-
-    if (hoveredElement?.id !== prev?.id) render();
-    else if (hoverInsertPoint) render();
-  } else if (!isPlacingLine && (activeTool === 'small-frame' || activeTool === 'large-frame')) {
-    // Frame tool hover
-    hoveredElement = findHoveredElement(gp.x, gp.y);
-    if (hoveredElement) {
-      showTooltip(e.clientX, e.clientY, hoveredElement.element.authorName);
-    } else {
-      hideTooltip();
-    }
-    render();
-  } else if (activeTool === 'delete') {
-    hoveredElement = findHoveredElement(gp.x, gp.y);
-    if (hoveredElement) {
-      showTooltip(e.clientX, e.clientY, hoveredElement.element.authorName);
-      canvas.style.cursor = 'pointer';
-    } else {
-      hideTooltip();
-      canvas.style.cursor = 'crosshair';
-    }
-  } else {
-    // Placing line — just re-render for preview
-    hideTooltip();
-    render();
+    render(); return;
   }
+
+  hoverInsertPoint = null;
+  const notPlacing = !isPlacingLine;
+
+  // Check hover for selected line insert points
+  if (notPlacing && selectedElement?.type === 'line') {
+    const selLine = lines.find(l => l.id === selectedElement.id);
+    if (selLine) {
+      // Near attachment point?
+      if (hitTestAttachPt(gp.x, gp.y, selLine) >= 0) {
+        canvas.style.cursor = 'grab';
+        hoveredElement = { type: 'line', id: selLine.id, element: selLine };
+        hideTooltip(); render(); return;
+      }
+      // Near curve for insert?
+      const res = findInsertPoint(gp.x, gp.y, selLine);
+      if (res.dist < pixelToFeet(10) && res.point) {
+        hoverInsertPoint = { lineId: selLine.id, segmentIndex: res.segmentIndex, x: res.point.x, y: res.point.y };
+        canvas.style.cursor = 'copy';
+        hoveredElement = { type: 'line', id: selLine.id, element: selLine };
+        hideTooltip(); render(); return;
+      }
+    }
+  }
+
+  // General hover
+  const prev = hoveredElement;
+  hoveredElement = findHovered(gp.x, gp.y);
+
+  if (hoveredElement && !(isSelected(hoveredElement.type, hoveredElement.id))) {
+    showTooltipEdit(e.clientX, e.clientY, hoveredElement.element.authorName);
+    canvas.style.cursor = 'pointer';
+  } else {
+    hideTooltip();
+    canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
+  }
+
+  if (hoveredElement?.id !== prev?.id) render();
+
+  // Frame/line preview re-render
+  if (isPlacingLine || stagedFrame || activeTool === 'small-frame' || activeTool === 'large-frame') render();
 }
 
 function onMouseDown(e) {
   if (e.button !== 0) return;
   if (viewingSnapshot !== null) return;
-
   const gp = canvasToGrid(mouseX, mouseY);
-  const canInteract = activeTool === 'select' || activeTool === 'line';
 
-  if (!canInteract) return;
-
-  // If there's a hover insert point, insert it and start dragging
+  // Insert point on selected line
   if (hoverInsertPoint && !isPlacingLine) {
     const line = lines.find(l => l.id === hoverInsertPoint.lineId);
     if (line) {
-      const insertIdx = hoverInsertPoint.segmentIndex + 1;
-      const snapped = snapToMesh(hoverInsertPoint.x, hoverInsertPoint.y);
-      const clamped = clampToGrid(snapped.x, snapped.y);
-      line.points.splice(insertIdx, 0, { x: clamped.x, y: clamped.y });
+      const idx = hoverInsertPoint.segmentIndex + 1;
+      const s = snapToMesh(hoverInsertPoint.x, hoverInsertPoint.y);
+      const c = clampToGrid(s.x, s.y);
+      line.points.splice(idx, 0, { x: c.x, y: c.y });
       socket.emit('edit-line', { id: line.id, points: line.points });
-
       isDragging = true;
-      dragTarget = { type: 'line-point', id: line.id, pointIndex: insertIdx };
+      dragTarget = { type: 'line-point', id: line.id, pointIndex: idx };
       hoverInsertPoint = null;
       canvas.style.cursor = 'grabbing';
-      render();
-      return;
+      render(); return;
     }
   }
 
-  // Check if clicking on an existing attachment point
-  if (!isPlacingLine) {
-    for (const line of lines) {
-      const ptIdx = hitTestAttachmentPoint(gp.x, gp.y, line);
+  // Drag attachment point of selected line
+  if (!isPlacingLine && selectedElement?.type === 'line') {
+    const selLine = lines.find(l => l.id === selectedElement.id);
+    if (selLine) {
+      const ptIdx = hitTestAttachPt(gp.x, gp.y, selLine);
       if (ptIdx >= 0) {
         isDragging = true;
-        dragTarget = { type: 'line-point', id: line.id, pointIndex: ptIdx };
+        dragTarget = { type: 'line-point', id: selLine.id, pointIndex: ptIdx };
         canvas.style.cursor = 'grabbing';
         return;
       }
     }
   }
 
-  // Check if clicking on a frame (for dragging) — only in select mode
-  if (activeTool === 'select') {
+  // Drag frames — in select, small-frame, or large-frame tool
+  const canDragFrame = activeTool === 'select' || activeTool === 'small-frame' || activeTool === 'large-frame';
+  if (canDragFrame && !stagedFrame) {
     for (let i = frames.length - 1; i >= 0; i--) {
       if (hitTestFrame(gp.x, gp.y, frames[i])) {
         isDragging = true;
         dragTarget = { type: 'frame', id: frames[i].id };
+        selectedElement = { type: 'frame', id: frames[i].id };
         canvas.style.cursor = 'grabbing';
-        return;
+        render(); return;
       }
     }
+  }
+
+  // Pan if zoomed and clicking on empty space
+  if (zoomLevel > 1.05 && !hoveredElement) {
+    isPanning = true;
+    panLastX = mouseX;
+    panLastY = mouseY;
+    canvas.style.cursor = 'grabbing';
+    return;
   }
 }
 
 function onMouseUp() {
-  if (isDragging) {
-    isDragging = false;
-    dragTarget = null;
-    canvas.style.cursor = 'crosshair';
-  }
+  if (isDragging) { isDragging = false; dragTarget = null; }
+  if (isPanning) { isPanning = false; }
+  canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
 }
 
 function onClick(e) {
-  if (isDragging) return;
+  if (isDragging || isPanning) return;
   if (viewingSnapshot !== null) return;
-
   const rect = canvas.getBoundingClientRect();
-  const cx = e.clientX - rect.left;
-  const cy = e.clientY - rect.top;
-  const gp = canvasToGrid(cx, cy);
+  const gp = canvasToGrid(e.clientX - rect.left, e.clientY - rect.top);
 
-  if (gp.x < 0 || gp.x > GRID_WIDTH_FT || gp.y < 0 || gp.y > GRID_HEIGHT_FT) return;
+  // Select/deselect on click
+  const hit = findHovered(gp.x, gp.y);
 
-  const snapped = snapToMesh(gp.x, gp.y);
-  const clamped = clampToGrid(snapped.x, snapped.y);
+  if (activeTool === 'delete') {
+    if (hit) handleDelete(gp);
+    return;
+  }
 
   if (activeTool === 'line') {
-    handleLinePlacement(clamped);
-  } else if (activeTool === 'small-frame' || activeTool === 'large-frame') {
-    handleFramePlacement(clamped);
-  } else if (activeTool === 'delete') {
-    handleDelete(gp);
+    if (hit && !isPlacingLine) {
+      // Click on element → select it
+      selectedElement = { type: hit.type, id: hit.id };
+      render(); return;
+    }
+    if (!hit && !isPlacingLine) { selectedElement = null; }
+    // Line placement
+    if (gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
+      const s = snapToMesh(gp.x, gp.y);
+      handleLinePlacement(clampToGrid(s.x, s.y));
+    }
+    render(); return;
   }
+
+  if (activeTool === 'small-frame' || activeTool === 'large-frame') {
+    if (hit && !stagedFrame) {
+      selectedElement = { type: hit.type, id: hit.id };
+      render(); return;
+    }
+    if (!hit && !stagedFrame) { selectedElement = null; }
+    if (gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
+      const s = snapToMesh(gp.x, gp.y);
+      handleFramePlacement(clampToGrid(s.x, s.y));
+    }
+    render(); return;
+  }
+
+  // Select tool
+  if (hit) {
+    selectedElement = { type: hit.type, id: hit.id };
+  } else {
+    selectedElement = null;
+  }
+  render();
 }
 
 // ── Line Placement ───────────────────────────────────────────────────────────
 
 function handleLinePlacement(gridPos) {
-  // Check if user already has a committed line
-  if (!isPlacingLine && userHasPlacedLine()) {
-    showToast('You have already placed your LED strip.');
-    return;
-  }
-
+  if (!isPlacingLine && userHasPlacedLine()) { showToast('You have already placed your LED strip.'); return; }
   if (!isPlacingLine) {
-    isPlacingLine = true;
-    currentLinePoints = [gridPos];
-    currentLineUsed = 0;
-    lineStatusEl.classList.remove('hidden');
-    updateLineStatus();
-    return;
+    isPlacingLine = true; currentLinePoints = [gridPos]; currentLineUsed = 0;
+    lineStatusEl.classList.remove('hidden'); updateLineStatus(); return;
   }
-
-  // Add new attachment point
   const lastPt = currentLinePoints[currentLinePoints.length - 1];
-  const segmentLen = computeSegmentArcLength(lastPt, gridPos);
-
-  if (currentLineUsed + segmentLen > MAX_STRIP_LENGTH_FT) {
-    showToast('You have reached the 20 foot limit.');
-    return;
-  }
-
+  const segLen = computeSegmentArcLength(lastPt, gridPos);
+  if (currentLineUsed + segLen > MAX_STRIP_LENGTH_FT) { showToast('You have reached the 20 foot limit.'); return; }
   currentLinePoints.push(gridPos);
-  currentLineUsed += segmentLen;
-  updateLineStatus();
-  render();
+  currentLineUsed += segLen;
+  updateLineStatus(); render();
 }
 
 function updateLineStatus() {
-  const remaining = MAX_STRIP_LENGTH_FT - currentLineUsed;
-  lineRemainingEl.textContent = `${remaining.toFixed(1)} ft remaining`;
+  lineRemainingEl.textContent = `${(MAX_STRIP_LENGTH_FT - currentLineUsed).toFixed(1)} ft remaining`;
 }
 
 function commitLine() {
@@ -907,187 +816,108 @@ function commitLine() {
 }
 
 function cancelLine() {
-  isPlacingLine = false;
-  currentLinePoints = [];
-  currentLineUsed = 0;
-  lineStatusEl.classList.add('hidden');
-  render();
+  isPlacingLine = false; currentLinePoints = []; currentLineUsed = 0;
+  lineStatusEl.classList.add('hidden'); render();
 }
 
-// ── Frame Placement (staged confirmation) ────────────────────────────────────
+// ── Frame Placement ──────────────────────────────────────────────────────────
 
 function handleFramePlacement(gridPos) {
-  const frameType = activeTool === 'small-frame' ? 'small' : 'large';
-  const size = frameType === 'small' ? SMALL_FRAME_FT : LARGE_FRAME_FT;
-
-  // Check if user already placed this type
-  const userFrames = frames.filter(f => f.authorId === currentUser.id && f.type === frameType);
-  if (userFrames.length >= 1) {
-    showToast(`You have already placed your ${frameType === 'small' ? '8"x8"' : "2'x2'"} frame.`);
-    return;
+  const ftype = activeTool === 'small-frame' ? 'small' : 'large';
+  const size = ftype === 'small' ? SMALL_FRAME_FT : LARGE_FRAME_FT;
+  if (frames.filter(f => f.authorId === currentUser.id && f.type === ftype).length >= 1) {
+    showToast(`You have already placed your ${ftype === 'small' ? '8"x8"' : "2'x2'"} frame.`); return;
   }
-
-  // Ensure within grid
-  const halfSize = size / 2;
-  const fx = Math.max(halfSize, Math.min(GRID_WIDTH_FT - halfSize, gridPos.x));
-  const fy = Math.max(halfSize, Math.min(GRID_HEIGHT_FT - halfSize, gridPos.y));
-
-  // Stage the frame (or reposition if already staged)
-  stagedFrame = { x: fx, y: fy, width: size, height: size, type: frameType };
-
-  // Show confirmation bar
-  frameInfoEl.textContent = frameType === 'small' ? 'Small Frame (8"×8")' : "Large Frame (2'×2')";
-  frameStatusEl.classList.remove('hidden');
-
-  render();
+  const hs = size / 2;
+  const fx = Math.max(hs, Math.min(GRID_WIDTH_FT - hs, gridPos.x));
+  const fy = Math.max(hs, Math.min(GRID_HEIGHT_FT - hs, gridPos.y));
+  stagedFrame = { x: fx, y: fy, width: size, height: size, type: ftype };
+  frameInfoEl.textContent = ftype === 'small' ? 'Small Frame (8"×8")' : "Large Frame (2'×2')";
+  frameStatusEl.classList.remove('hidden'); render();
 }
 
-function commitFrame() {
-  if (!stagedFrame) return;
-  socket.emit('place-frame', stagedFrame);
-  cancelFrame();
-}
+function commitFrame() { if (!stagedFrame) return; socket.emit('place-frame', stagedFrame); cancelFrame(); }
+function cancelFrame() { stagedFrame = null; frameStatusEl.classList.add('hidden'); render(); }
 
-function cancelFrame() {
-  stagedFrame = null;
-  frameStatusEl.classList.add('hidden');
-  render();
-}
-
-// ── Delete Handling ──────────────────────────────────────────────────────────
+// ── Delete ───────────────────────────────────────────────────────────────────
 
 function handleDelete(gp) {
-  const hit = findHoveredElement(gp.x, gp.y);
+  const hit = findHovered(gp.x, gp.y);
   if (!hit) return;
-
   if (hit.element.authorId === currentUser.id) {
     socket.emit('delete-own', { id: hit.id, type: hit.type });
   } else {
-    socket.emit('request-delete', {
-      elementId: hit.id,
-      elementType: hit.type,
-      elementAuthorId: hit.element.authorId,
-      elementAuthorName: hit.element.authorName
-    });
+    socket.emit('request-delete', { elementId: hit.id, elementType: hit.type, elementAuthorId: hit.element.authorId, elementAuthorName: hit.element.authorName });
     showToast(`Delete request sent to ${hit.element.authorName}.`);
   }
 }
 
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 
-function showTooltip(x, y, authorName) {
-  tooltipEl.innerHTML = `<span class="author-name">${authorName}</span>`;
+function showTooltipEdit(x, y, authorName) {
+  tooltipEl.innerHTML = `<span class="author-name">${authorName}</span><span class="edit-hint">Click to Edit</span>`;
   tooltipEl.style.left = (x + 14) + 'px';
-  tooltipEl.style.top = (y - 32) + 'px';
+  tooltipEl.style.top = (y - 42) + 'px';
   tooltipEl.classList.remove('hidden');
 }
 
-function hideTooltip() {
-  tooltipEl.classList.add('hidden');
-}
+function hideTooltip() { tooltipEl.classList.add('hidden'); }
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
 function renderNotifications() {
-  const myRequests = deleteRequests.filter(r => r.elementAuthorId === currentUser.id);
-
+  const my = deleteRequests.filter(r => r.elementAuthorId === currentUser.id);
   notifList.innerHTML = '';
-
-  if (myRequests.length === 0) {
-    notifList.innerHTML = '<p style="color: var(--text-dim); font-size: 14px; text-align: center; padding: 24px; font-style: italic;">No notifications</p>';
-    return;
-  }
-
-  for (const req of myRequests) {
+  if (my.length === 0) { notifList.innerHTML = '<p style="color:var(--text-dim);font-size:14px;text-align:center;padding:24px;font-style:italic">No notifications</p>'; return; }
+  for (const req of my) {
     const div = document.createElement('div');
     div.className = `notif-item ${req.status !== 'pending' ? 'notif-resolved' : ''}`;
-
-    div.innerHTML = `
-      <div class="notif-text">
-        <strong>${req.requesterName}</strong> wants to delete your ${req.elementType}
-      </div>
-      ${req.status === 'pending' ? `
-        <div class="notif-actions">
-          <button class="approve-btn" onclick="window._approveDelete('${req.id}')">Approve</button>
-          <button class="deny-btn" onclick="window._denyDelete('${req.id}')">Deny</button>
-        </div>
-      ` : `
-        <div class="notif-status ${req.status}">${req.status}</div>
-      `}
-    `;
+    div.innerHTML = `<div class="notif-text"><strong>${req.requesterName}</strong> wants to delete your ${req.elementType}</div>
+      ${req.status === 'pending' ? `<div class="notif-actions"><button class="approve-btn" onclick="window._approveDelete('${req.id}')">Approve</button><button class="deny-btn" onclick="window._denyDelete('${req.id}')">Deny</button></div>` : `<div class="notif-status ${req.status}">${req.status}</div>`}`;
     notifList.appendChild(div);
   }
-
-  // Update badge — red exclamation mark
-  const pendingCount = myRequests.filter(r => r.status === 'pending').length;
-  if (pendingCount > 0) {
-    notifBadge.textContent = '!';
-    notifBadge.classList.remove('hidden');
-  } else {
-    notifBadge.classList.add('hidden');
-  }
+  const pending = my.filter(r => r.status === 'pending').length;
+  if (pending > 0) { notifBadge.textContent = '!'; notifBadge.classList.remove('hidden'); }
+  else { notifBadge.classList.add('hidden'); }
 }
 
-window._approveDelete = function(requestId) {
-  socket.emit('approve-delete', { requestId });
-};
-
-window._denyDelete = function(requestId) {
-  socket.emit('deny-delete', { requestId });
-};
+window._approveDelete = (id) => socket.emit('approve-delete', { requestId: id });
+window._denyDelete = (id) => socket.emit('deny-delete', { requestId: id });
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
 function renderTimeline() {
   timelineTrack.innerHTML = '';
-
-  const currentTab = document.createElement('button');
-  currentTab.className = `timeline-tab ${viewingSnapshot === null ? 'active' : ''}`;
-  currentTab.textContent = 'Current';
-  currentTab.addEventListener('click', () => {
-    viewingSnapshot = null;
-    renderTimeline();
-    render();
-  });
-  timelineTrack.appendChild(currentTab);
-
+  const ct = document.createElement('button');
+  ct.className = `timeline-tab ${viewingSnapshot === null ? 'active' : ''}`;
+  ct.textContent = 'Current';
+  ct.addEventListener('click', () => { viewingSnapshot = null; renderTimeline(); render(); });
+  timelineTrack.appendChild(ct);
   for (let i = 0; i < snapshots.length; i++) {
-    const tab = document.createElement('button');
-    tab.className = `timeline-tab ${viewingSnapshot === i ? 'active' : ''}`;
-    tab.textContent = `${snapshots[i].elementCount} elements`;
-    tab.addEventListener('click', () => {
-      viewingSnapshot = i;
-      renderTimeline();
-      render();
-    });
-    timelineTrack.appendChild(tab);
+    const t = document.createElement('button');
+    t.className = `timeline-tab ${viewingSnapshot === i ? 'active' : ''}`;
+    t.textContent = `${snapshots[i].elementCount} elements`;
+    t.addEventListener('click', () => { viewingSnapshot = i; renderTimeline(); render(); });
+    timelineTrack.appendChild(t);
   }
 }
 
 // ── Tool Selection ───────────────────────────────────────────────────────────
 
 function initTools() {
-  const toolBtns = document.querySelectorAll('.tool-btn');
-
-  toolBtns.forEach(btn => {
+  document.querySelectorAll('.tool-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const tool = btn.dataset.tool;
-
-      // Cancel any in-progress placement
       if (isPlacingLine) cancelLine();
       if (stagedFrame) cancelFrame();
-
-      activeTool = tool;
-      toolBtns.forEach(b => b.classList.remove('active'));
+      activeTool = btn.dataset.tool;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-
-      canvas.style.cursor = (tool === 'select') ? 'default' : 'crosshair';
-
+      selectedElement = null;
       hoverInsertPoint = null;
+      canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
       render();
     });
   });
-
   commitLineBtn.addEventListener('click', commitLine);
   cancelLineBtn.addEventListener('click', cancelLine);
   commitFrameBtn.addEventListener('click', commitFrame);
@@ -1098,82 +928,23 @@ function initTools() {
 
 function initSocket() {
   socket = io();
-
   socket.on('joined', (data) => {
-    currentUser = data.user;
-    userLabel.textContent = currentUser.name;
-
-    lines = data.state.lines;
-    frames = data.state.frames;
-    deleteRequests = data.state.deleteRequests;
-    snapshots = data.state.snapshots;
+    currentUser = data.user; userLabel.textContent = currentUser.name;
+    lines = data.state.lines; frames = data.state.frames;
+    deleteRequests = data.state.deleteRequests; snapshots = data.state.snapshots;
     totalElements = data.state.totalElements;
-
-    renderTimeline();
-    renderNotifications();
-    render();
+    renderTimeline(); renderNotifications(); render();
   });
-
-  socket.on('line-placed', (line) => {
-    const existing = lines.findIndex(l => l.id === line.id);
-    if (existing >= 0) lines[existing] = line;
-    else lines.push(line);
-    render();
-  });
-
-  socket.on('frame-placed', (frame) => {
-    const existing = frames.findIndex(f => f.id === frame.id);
-    if (existing >= 0) frames[existing] = frame;
-    else frames.push(frame);
-    render();
-  });
-
-  socket.on('line-updated', (line) => {
-    const idx = lines.findIndex(l => l.id === line.id);
-    if (idx >= 0) lines[idx] = line;
-    render();
-  });
-
-  socket.on('frame-updated', (frame) => {
-    const idx = frames.findIndex(f => f.id === frame.id);
-    if (idx >= 0) frames[idx] = frame;
-    render();
-  });
-
-  socket.on('element-deleted', (data) => {
-    if (data.type === 'line') lines = lines.filter(l => l.id !== data.id);
-    else frames = frames.filter(f => f.id !== data.id);
-    hoveredElement = null;
-    hideTooltip();
-    render();
-  });
-
-  socket.on('delete-request', (req) => {
-    deleteRequests.push(req);
-    renderNotifications();
-  });
-
-  socket.on('delete-approved', (data) => {
-    const req = deleteRequests.find(r => r.id === data.requestId);
-    if (req) req.status = 'approved';
-    if (data.elementType === 'line') lines = lines.filter(l => l.id !== data.elementId);
-    else frames = frames.filter(f => f.id !== data.elementId);
-    renderNotifications();
-    render();
-  });
-
-  socket.on('delete-denied', (data) => {
-    const req = deleteRequests.find(r => r.id === data.requestId);
-    if (req) req.status = 'denied';
-    renderNotifications();
-  });
-
-  socket.on('element-count', (count) => { totalElements = count; });
-
-  socket.on('snapshot-added', (snapshot) => {
-    snapshots.push(snapshot);
-    renderTimeline();
-  });
+  socket.on('line-placed', (l) => { const i = lines.findIndex(x => x.id === l.id); if (i >= 0) lines[i] = l; else lines.push(l); render(); });
+  socket.on('frame-placed', (f) => { const i = frames.findIndex(x => x.id === f.id); if (i >= 0) frames[i] = f; else frames.push(f); render(); });
+  socket.on('line-updated', (l) => { const i = lines.findIndex(x => x.id === l.id); if (i >= 0) lines[i] = l; render(); });
+  socket.on('frame-updated', (f) => { const i = frames.findIndex(x => x.id === f.id); if (i >= 0) frames[i] = f; render(); });
+  socket.on('element-deleted', (d) => { if (d.type === 'line') lines = lines.filter(l => l.id !== d.id); else frames = frames.filter(f => f.id !== d.id); hoveredElement = null; selectedElement = null; hideTooltip(); render(); });
+  socket.on('delete-request', (r) => { deleteRequests.push(r); renderNotifications(); });
+  socket.on('delete-approved', (d) => { const r = deleteRequests.find(x => x.id === d.requestId); if (r) r.status = 'approved'; if (d.elementType === 'line') lines = lines.filter(l => l.id !== d.elementId); else frames = frames.filter(f => f.id !== d.elementId); renderNotifications(); render(); });
+  socket.on('delete-denied', (d) => { const r = deleteRequests.find(x => x.id === d.requestId); if (r) r.status = 'denied'; renderNotifications(); });
+  socket.on('element-count', (c) => { totalElements = c; });
+  socket.on('snapshot-added', (s) => { snapshots.push(s); renderTimeline(); });
 }
 
 // ── Login ────────────────────────────────────────────────────────────────────
@@ -1185,49 +956,32 @@ function initLogin() {
 }
 
 function doLogin() {
-  const name = fullNameInput.value.trim();
-  const email = emailInput.value.trim();
-
-  let valid = true;
-  if (!name) { fullNameInput.style.borderColor = '#cc2222'; valid = false; }
-  else { fullNameInput.style.borderColor = ''; }
-
-  if (!email || !email.includes('@')) { emailInput.style.borderColor = '#cc2222'; valid = false; }
-  else { emailInput.style.borderColor = ''; }
-
-  if (!valid) return;
-
-  loginScreen.classList.add('hidden');
-  appDiv.classList.remove('hidden');
-
-  initCanvas();
-  initInput();
-  initTools();
-
+  const name = fullNameInput.value.trim(), email = emailInput.value.trim();
+  let ok = true;
+  if (!name) { fullNameInput.style.borderColor = '#cc2222'; ok = false; } else fullNameInput.style.borderColor = '';
+  if (!email || !email.includes('@')) { emailInput.style.borderColor = '#cc2222'; ok = false; } else emailInput.style.borderColor = '';
+  if (!ok) return;
+  loginScreen.classList.add('hidden'); appDiv.classList.remove('hidden');
+  initCanvas(); initInput(); initTools(); initZoom();
   document.querySelector('[data-tool="select"]').classList.add('active');
-
-  initSocket();
-  socket.emit('join', { name, email });
+  initSocket(); socket.emit('join', { name, email });
 }
 
-// ── Notifications toggle ─────────────────────────────────────────────────────
+// ── Toggles ──────────────────────────────────────────────────────────────────
 
-notifToggle.addEventListener('click', () => { notifPanel.classList.toggle('hidden'); });
-closeNotifBtn.addEventListener('click', () => { notifPanel.classList.add('hidden'); });
+notifToggle.addEventListener('click', () => notifPanel.classList.toggle('hidden'));
+closeNotifBtn.addEventListener('click', () => notifPanel.classList.add('hidden'));
 
 // ── Animation Loop ───────────────────────────────────────────────────────────
 
-function animationLoop() {
-  requestAnimationFrame(animationLoop);
-  if (isPlacingLine || stagedFrame || isDragging ||
-      activeTool === 'small-frame' || activeTool === 'large-frame') {
-    render();
-  }
+function animLoop() {
+  requestAnimationFrame(animLoop);
+  if (isPlacingLine || stagedFrame || isDragging || isPanning || activeTool === 'small-frame' || activeTool === 'large-frame') render();
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 initLogin();
-requestAnimationFrame(animationLoop);
+requestAnimationFrame(animLoop);
 
 })();

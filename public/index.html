@@ -99,11 +99,17 @@
       <div id="notifications-list" class="panel-body"></div>
     </aside>
 
-    <!-- TIMELINE -->
-    <div id="timeline-bar">
-      <div id="timeline-label">Timeline</div>
-      <div id="timeline-track">
-        <button class="timeline-tab active" data-snapshot="current">Current</button>
+    <!-- BOTTOM BAR: TIMELINE + ZOOM -->
+    <div id="bottom-bar">
+      <div id="timeline-section">
+        <div id="timeline-label">Timeline</div>
+        <div id="timeline-track">
+          <button class="timeline-tab active" data-snapshot="current">Current</button>
+        </div>
+      </div>
+      <div id="zoom-section">
+        <span id="zoom-label">100%</span>
+        <input type="range" id="zoom-slider" min="100" max="600" step="5" value="100" />
       </div>
     </div>
 
