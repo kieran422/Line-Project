@@ -1300,7 +1300,7 @@ function exportPDF() {
   ctx.fillStyle = '#c0c0c0';
   ctx.font = '20px "Cormorant Garamond", Georgia, serif';
   ctx.textAlign = 'left';
-  ctx.fillText('A Less Menacing IRL', 20, 28);
+  ctx.fillText('Collaboration in Line', 20, 28);
   ctx.fillStyle = '#777777';
   ctx.font = '14px "Cormorant Garamond", Georgia, serif';
   ctx.textAlign = 'right';
