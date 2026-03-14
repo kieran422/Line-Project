@@ -877,9 +877,14 @@ function onMouseUp() {
   if (isDragging) {
     isDragging = false;
     dragTarget = null;
-    justFinishedDrag = true; // prevent the click event from deselecting
+    justFinishedDrag = true;
+    setTimeout(() => { justFinishedDrag = false; }, 100); // auto-clear safety
   }
-  if (isPanning) { isPanning = false; justFinishedDrag = true; }
+  if (isPanning) {
+    isPanning = false;
+    justFinishedDrag = true;
+    setTimeout(() => { justFinishedDrag = false; }, 100);
+  }
   canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
 }
 
@@ -1055,7 +1060,7 @@ function renderNotifications() {
     } else {
       div.className = `notif-item ${req.status !== 'pending' ? 'notif-resolved' : ''}`;
       div.innerHTML = `<div class="notif-text"><strong>${req.requesterName}</strong> wants to delete your ${req.elementType}</div>
-        ${req.status === 'pending' ? `<div class="notif-actions"><button class="approve-btn" onclick="window._approveDelete('${req.id}')">Approve</button><button class="deny-btn" onclick="window._denyDelete('${req.id}')">Deny</button></div>` : `<div class="notif-status ${req.status}">${req.status}</div>`}`;
+        ${req.status === 'pending' ? `<div class="notif-actions"><button class="approve-btn" data-action="approve" data-id="${req.id}">Approve</button><button class="deny-btn" data-action="deny" data-id="${req.id}">Deny</button></div>` : `<div class="notif-status ${req.status}">${req.status}</div>`}`;
     }
     notifList.appendChild(div);
   }
@@ -1064,8 +1069,15 @@ function renderNotifications() {
   else { notifBadge.classList.add('hidden'); }
 }
 
-window._approveDelete = (id) => socket.emit('approve-delete', { requestId: id });
-window._denyDelete = (id) => socket.emit('deny-delete', { requestId: id });
+// Event delegation for notification buttons
+notifList.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  if (action === 'approve') socket.emit('approve-delete', { requestId: id });
+  else if (action === 'deny') socket.emit('deny-delete', { requestId: id });
+});
 
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
@@ -1129,6 +1141,10 @@ function initTools() {
       btn.classList.add('active');
       selectedElement = null;
       hoverInsertPoint = null;
+      justFinishedDrag = false;
+      isDragging = false;
+      isPanning = false;
+      dragTarget = null;
       canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
       render();
     });
