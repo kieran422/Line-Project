@@ -12,6 +12,16 @@ const io = new Server(server, {
 });
 
 app.use(express.static('public'));
+app.use(express.json());
+
+// Lookup endpoint — returns stored name for an email (if exists)
+app.post('/api/lookup', (req, res) => {
+  const email = (req.body.email || '').toLowerCase().trim();
+  if (!email) return res.json({ found: false });
+  const profile = profiles.get(email);
+  if (profile) return res.json({ found: true, name: profile.name });
+  return res.json({ found: false });
+});
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
@@ -135,19 +145,7 @@ function getOrCreateProfile(email, name) {
   let profile = profiles.get(normalized);
 
   if (profile) {
-    // Update name if changed
-    if (name && name !== profile.name) {
-      profile.name = name;
-      // Update name on all authored elements
-      for (const line of lines.values()) {
-        if (line.authorId === profile.id) line.authorName = name;
-      }
-      for (const frame of frames.values()) {
-        if (frame.authorId === profile.id) frame.authorName = name;
-      }
-      saveState();
-    }
-    saveProfiles();
+    // Returning user — keep their original name, don't update
     return profile;
   }
 

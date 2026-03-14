@@ -1188,10 +1188,39 @@ function initSocket() {
 
 // ── Login ────────────────────────────────────────────────────────────────────
 
+let emailLookupTimer = null;
+
 function initLogin() {
   enterBtn.addEventListener('click', doLogin);
   emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   fullNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') emailInput.focus(); });
+
+  // Auto-fill name when a known email is typed
+  emailInput.addEventListener('input', () => {
+    clearTimeout(emailLookupTimer);
+    const email = emailInput.value.trim();
+    if (!email || !email.includes('@')) return;
+    emailLookupTimer = setTimeout(() => {
+      fetch('/api/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.found && data.name) {
+          fullNameInput.value = data.name;
+          fullNameInput.style.borderColor = '';
+          fullNameInput.disabled = true;
+          fullNameInput.style.opacity = '0.6';
+        } else {
+          fullNameInput.disabled = false;
+          fullNameInput.style.opacity = '1';
+        }
+      })
+      .catch(() => {});
+    }, 400);
+  });
 }
 
 function doLogin() {
