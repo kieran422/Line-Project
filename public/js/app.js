@@ -38,7 +38,7 @@ let viewCenterY = GRID_HEIGHT_FT / 2;
 let isPanning = false;
 let panLastX = 0, panLastY = 0;
 
-let activeTool = 'select';
+let activeTool = 'view';
 let lines = [];
 let frames = [];
 let deleteRequests = [];
@@ -97,7 +97,9 @@ const notifBadge = document.getElementById('notif-badge');
 const notifPanel = document.getElementById('notifications-panel');
 const notifList = document.getElementById('notifications-list');
 const closeNotifBtn = document.getElementById('close-notifications');
-const timelineTrack = document.getElementById('timeline-track');
+const playheadSlider = document.getElementById('playhead-slider');
+const playheadTicks = document.getElementById('playhead-ticks');
+const playheadInfo = document.getElementById('playhead-info');
 const canvasContainer = document.getElementById('canvas-container');
 const zoomSlider = document.getElementById('zoom-slider');
 const zoomLabel = document.getElementById('zoom-label');
@@ -143,6 +145,18 @@ function snapToMesh(gx, gy) {
   };
 }
 
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const mon = d.toLocaleString('default', { month: 'short' });
+  const day = d.getDate();
+  const hr = d.getHours();
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hr >= 12 ? 'PM' : 'AM';
+  const h12 = hr % 12 || 12;
+  return `${mon} ${day}, ${h12}:${min} ${ampm}`;
+}
+
 function showToast(msg, duration) {
   if (toastTimer) clearTimeout(toastTimer);
   toastMsgEl.textContent = msg;
@@ -162,7 +176,17 @@ function isSelected(type, id) {
 
 function computeSegmentCurve(p1, p2, numPoints) {
   const dx = p2.x - p1.x, dy = p2.y - p1.y;
-  const sag = Math.max(Math.abs(dx) * SAG_FACTOR, MIN_SAG_FT);
+  const span = Math.sqrt(dx * dx + dy * dy);
+  const hDist = Math.abs(dx);
+
+  // Tension model: when points are within 1 foot, reduce sag proportionally
+  // At 1ft apart the strip is taut with minimal droop, at 0ft it's straight
+  let tension = 1;
+  if (span <= 1) {
+    tension = span * span; // quadratic falloff — very tight when close
+  }
+
+  const sag = Math.max(hDist * SAG_FACTOR * tension, MIN_SAG_FT * tension);
   const points = [];
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
@@ -190,6 +214,14 @@ function computeArcLength(points) {
 
 function computeSegmentArcLength(p1, p2) {
   return computeArcLength(computeSegmentCurve(p1, p2, CATENARY_POINTS));
+}
+
+function computeTotalLineLength(pts) {
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    total += computeSegmentArcLength(pts[i], pts[i + 1]);
+  }
+  return total;
 }
 
 // ── Canvas Setup ─────────────────────────────────────────────────────────────
@@ -224,6 +256,14 @@ function setZoom(newZoom, centerCx, centerCy) {
   } else {
     zoomLevel = newZoom;
   }
+
+  // Ease viewCenter back to grid center as zoom approaches 1
+  // At zoom 1.0 → fully centered, at zoom 2+ → no correction
+  const defaultCX = GRID_WIDTH_FT / 2, defaultCY = GRID_HEIGHT_FT / 2;
+  const t = Math.max(0, Math.min(1, (zoomLevel - 1))); // 0 at zoom=1, 1 at zoom>=2
+  viewCenterX = defaultCX + (viewCenterX - defaultCX) * t;
+  viewCenterY = defaultCY + (viewCenterY - defaultCY) * t;
+
   zoomSlider.value = Math.round(zoomLevel * 100);
   zoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
   render();
@@ -414,15 +454,46 @@ function drawSelectedHandles(dl) {
   if (selectedElement?.type === 'line') {
     const line = dl.find(l => l.id === selectedElement.id);
     if (line) {
+      const atLimit = computeTotalLineLength(line.points) >= MAX_STRIP_LENGTH_FT - 0.05;
+      const isOthers = line.authorId !== currentUser?.id;
       for (let i = 0; i < line.points.length; i++) {
         const p = gridToCanvas(line.points[i].x, line.points[i].y);
-        ctx.fillStyle = '#111111';
-        ctx.strokeStyle = LED_COLOR;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        const isEndpoint = (i === 0 || i === line.points.length - 1);
+        const isLocked = isEndpoint && isOthers;
+
+        if (isLocked) {
+          // Locked endpoint on someone else's line — dim, non-interactive
+          ctx.fillStyle = '#0a0a0a';
+          ctx.strokeStyle = '#444444';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        } else if (atLimit) {
+          // At length limit — red ring
+          ctx.fillStyle = '#1a0808';
+          ctx.strokeStyle = '#cc2222';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(204,34,34,0.5)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 2, p.y); ctx.lineTo(p.x + 2, p.y);
+          ctx.stroke();
+        } else {
+          // Normal editable point
+          ctx.fillStyle = '#111111';
+          ctx.strokeStyle = LED_COLOR;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
       }
     }
   }
@@ -528,9 +599,9 @@ function drawPreview() {
 
 // ── Hit Testing ──────────────────────────────────────────────────────────────
 
-function hitTestLine(gx, gy, line) {
+function hitTestLine(gx, gy, line, wide) {
   const curve = computeLineCurve(line.points);
-  const thresh = pixelToFeet(8);
+  const thresh = pixelToFeet(wide ? 24 : 14); // 14px unselected — generous for thin lines
   for (let i = 1; i < curve.length; i++) {
     if (distToSeg(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y) < thresh) return true;
   }
@@ -542,9 +613,11 @@ function hitTestFrame(gx, gy, f) {
          gy >= f.y - f.height / 2 && gy <= f.y + f.height / 2;
 }
 
-function hitTestAttachPt(gx, gy, line) {
-  const thresh = pixelToFeet(10);
+function hitTestAttachPt(gx, gy, line, wide, skipEndpoints) {
+  const thresh = pixelToFeet(wide ? 22 : 10);
   for (let i = 0; i < line.points.length; i++) {
+    // Skip first and last points if editing someone else's line
+    if (skipEndpoints && (i === 0 || i === line.points.length - 1)) continue;
     if (dist(gx, gy, line.points[i].x, line.points[i].y) < thresh) return i;
   }
   return -1;
@@ -569,6 +642,19 @@ function findHovered(gx, gy) {
   }
   for (let i = lines.length - 1; i >= 0; i--) {
     if (hitTestLine(gx, gy, lines[i])) return { type: 'line', id: lines[i].id, element: lines[i] };
+  }
+  return null;
+}
+
+function findHoveredByType(gx, gy, type) {
+  if (type === 'frame') {
+    for (let i = frames.length - 1; i >= 0; i--) {
+      if (hitTestFrame(gx, gy, frames[i])) return { type: 'frame', id: frames[i].id, element: frames[i] };
+    }
+  } else if (type === 'line') {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (hitTestLine(gx, gy, lines[i])) return { type: 'line', id: lines[i].id, element: lines[i] };
+    }
   }
   return null;
 }
@@ -622,7 +708,18 @@ function onMouseMove(e) {
     const c = clampToGrid(s.x, s.y);
     if (dragTarget.type === 'line-point') {
       const line = lines.find(l => l.id === dragTarget.id);
-      if (line) { line.points[dragTarget.pointIndex] = { x: c.x, y: c.y }; socket.emit('edit-line', { id: line.id, points: line.points }); }
+      if (line) {
+        const oldPt = { ...line.points[dragTarget.pointIndex] };
+        const oldLen = computeTotalLineLength(line.points);
+        line.points[dragTarget.pointIndex] = { x: c.x, y: c.y };
+        const newLen = computeTotalLineLength(line.points);
+        // Allow if staying under limit, or if the move shortens the line
+        if (newLen > MAX_STRIP_LENGTH_FT && newLen > oldLen) {
+          line.points[dragTarget.pointIndex] = oldPt; // revert — would make it longer
+        } else {
+          socket.emit('edit-line', { id: line.id, points: line.points });
+        }
+      }
     } else if (dragTarget.type === 'frame') {
       const frame = frames.find(f => f.id === dragTarget.id);
       if (frame) { frame.x = c.x; frame.y = c.y; socket.emit('edit-frame', { id: frame.id, x: frame.x, y: frame.y }); }
@@ -632,20 +729,21 @@ function onMouseMove(e) {
 
   hoverInsertPoint = null;
   const notPlacing = !isPlacingLine;
+  const isLineTool = activeTool === 'line';
+  const isFrameTool = activeTool === 'small-frame' || activeTool === 'large-frame';
 
-  // Check hover for selected line insert points
-  if (notPlacing && selectedElement?.type === 'line') {
+  // Check hover for selected line handles (only in line tool)
+  if (isLineTool && notPlacing && selectedElement?.type === 'line') {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
-      // Near attachment point?
-      if (hitTestAttachPt(gp.x, gp.y, selLine) >= 0) {
+      const isOthers = selLine.authorId !== currentUser?.id;
+      if (hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers) >= 0) {
         canvas.style.cursor = 'grab';
         hoveredElement = { type: 'line', id: selLine.id, element: selLine };
         hideTooltip(); render(); return;
       }
-      // Near curve for insert?
       const res = findInsertPoint(gp.x, gp.y, selLine);
-      if (res.dist < pixelToFeet(10) && res.point) {
+      if (res.dist < pixelToFeet(20) && res.point) {
         hoverInsertPoint = { lineId: selLine.id, segmentIndex: res.segmentIndex, x: res.point.x, y: res.point.y };
         canvas.style.cursor = 'copy';
         hoveredElement = { type: 'line', id: selLine.id, element: selLine };
@@ -654,22 +752,36 @@ function onMouseMove(e) {
     }
   }
 
-  // General hover
+  // Scoped hover detection — each tool only sees its own element type
   const prev = hoveredElement;
-  hoveredElement = findHovered(gp.x, gp.y);
+  if (activeTool === 'view') {
+    hoveredElement = findHovered(gp.x, gp.y); // view sees everything (read-only)
+  } else if (isLineTool) {
+    hoveredElement = findHoveredByType(gp.x, gp.y, 'line');
+  } else if (isFrameTool) {
+    hoveredElement = findHoveredByType(gp.x, gp.y, 'frame');
+  } else if (activeTool === 'delete') {
+    hoveredElement = findHovered(gp.x, gp.y);
+  } else {
+    hoveredElement = null;
+  }
 
   if (hoveredElement && !(isSelected(hoveredElement.type, hoveredElement.id))) {
-    showTooltipEdit(e.clientX, e.clientY, hoveredElement.element.authorName);
+    if (activeTool === 'view') {
+      showTooltipView(e.clientX, e.clientY, hoveredElement.element.authorName);
+    } else {
+      showTooltipEdit(e.clientX, e.clientY, hoveredElement.element.authorName);
+    }
     canvas.style.cursor = 'pointer';
   } else {
     hideTooltip();
-    canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
+    canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
   }
 
   if (hoveredElement?.id !== prev?.id) render();
 
-  // Frame/line preview re-render
-  if (isPlacingLine || stagedFrame || activeTool === 'small-frame' || activeTool === 'large-frame') render();
+  // Preview re-render
+  if (isPlacingLine || stagedFrame || isFrameTool) render();
 }
 
 function onMouseDown(e) {
@@ -677,15 +789,34 @@ function onMouseDown(e) {
   if (viewingSnapshot !== null) return;
   const gp = canvasToGrid(mouseX, mouseY);
 
-  // Insert point on selected line
-  if (hoverInsertPoint && !isPlacingLine) {
+  // View mode — only panning
+  if (activeTool === 'view') {
+    isPanning = true;
+    panLastX = mouseX; panLastY = mouseY;
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  // Insert point on selected line (line tool only)
+  if (activeTool === 'line' && hoverInsertPoint && !isPlacingLine) {
     const line = lines.find(l => l.id === hoverInsertPoint.lineId);
     if (line) {
       const idx = hoverInsertPoint.segmentIndex + 1;
       const s = snapToMesh(hoverInsertPoint.x, hoverInsertPoint.y);
       const c = clampToGrid(s.x, s.y);
       line.points.splice(idx, 0, { x: c.x, y: c.y });
+      const overLimit = computeTotalLineLength(line.points) > MAX_STRIP_LENGTH_FT;
       socket.emit('edit-line', { id: line.id, points: line.points });
+      // Notify owner if editing someone else's line
+      if (line.authorId !== currentUser?.id) {
+        socket.emit('notify-edit', { lineId: line.id, authorId: line.authorId, authorName: line.authorName });
+      }
+      if (overLimit) {
+        // Point is inserted but locked — user can see it but can't drag it
+        showToast('Point added but locked — shorten the line to unlock it.');
+        hoverInsertPoint = null;
+        render(); return;
+      }
       isDragging = true;
       dragTarget = { type: 'line-point', id: line.id, pointIndex: idx };
       hoverInsertPoint = null;
@@ -694,22 +825,28 @@ function onMouseDown(e) {
     }
   }
 
-  // Drag attachment point of selected line
-  if (!isPlacingLine && selectedElement?.type === 'line') {
+  // Drag attachment point of selected line (line tool only, wide hitbox)
+  if (activeTool === 'line' && !isPlacingLine && selectedElement?.type === 'line') {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
-      const ptIdx = hitTestAttachPt(gp.x, gp.y, selLine);
+      const isOthers = selLine.authorId !== currentUser?.id;
+      const ptIdx = hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers);
       if (ptIdx >= 0) {
         isDragging = true;
         dragTarget = { type: 'line-point', id: selLine.id, pointIndex: ptIdx };
         canvas.style.cursor = 'grabbing';
+        // Notify owner if editing someone else's line
+        if (isOthers && !dragTarget._notified) {
+          socket.emit('notify-edit', { lineId: selLine.id, authorId: selLine.authorId, authorName: selLine.authorName });
+          dragTarget._notified = true;
+        }
         return;
       }
     }
   }
 
-  // Drag frames — in select, small-frame, or large-frame tool
-  const canDragFrame = activeTool === 'select' || activeTool === 'small-frame' || activeTool === 'large-frame';
+  // Drag frames — only in frame tools
+  const canDragFrame = activeTool === 'small-frame' || activeTool === 'large-frame';
   if (canDragFrame && !stagedFrame) {
     for (let i = frames.length - 1; i >= 0; i--) {
       if (hitTestFrame(gp.x, gp.y, frames[i])) {
@@ -722,8 +859,8 @@ function onMouseDown(e) {
     }
   }
 
-  // Pan if zoomed and clicking on empty space
-  if (zoomLevel > 1.05 && !hoveredElement) {
+  // Pan if zoomed and clicking on empty space (in editing tools)
+  if (zoomLevel > 1.05 && !hoveredElement && activeTool !== 'view') {
     isPanning = true;
     panLastX = mouseX;
     panLastY = mouseY;
@@ -732,60 +869,84 @@ function onMouseDown(e) {
   }
 }
 
+let justFinishedDrag = false;
+
 function onMouseUp() {
-  if (isDragging) { isDragging = false; dragTarget = null; }
-  if (isPanning) { isPanning = false; }
-  canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
+  if (isDragging) {
+    isDragging = false;
+    dragTarget = null;
+    justFinishedDrag = true; // prevent the click event from deselecting
+  }
+  if (isPanning) { isPanning = false; justFinishedDrag = true; }
+  canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
 }
 
 function onClick(e) {
+  // Swallow the click that follows a drag/pan release
+  if (justFinishedDrag) { justFinishedDrag = false; return; }
   if (isDragging || isPanning) return;
   if (viewingSnapshot !== null) return;
   const rect = canvas.getBoundingClientRect();
   const gp = canvasToGrid(e.clientX - rect.left, e.clientY - rect.top);
 
-  // Select/deselect on click
-  const hit = findHovered(gp.x, gp.y);
+  // View mode — no editing on click
+  if (activeTool === 'view') return;
+
+  // Check if click is near the selected element (wider zone) — don't deselect
+  let nearSelected = false;
+  if (selectedElement?.type === 'line') {
+    const selLine = lines.find(l => l.id === selectedElement.id);
+    if (selLine) {
+      const isOthers = selLine.authorId !== currentUser?.id;
+      if (hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers) >= 0) nearSelected = true;
+      else if (hitTestLine(gp.x, gp.y, selLine, true)) nearSelected = true;
+    }
+  } else if (selectedElement?.type === 'frame') {
+    const selFrame = frames.find(f => f.id === selectedElement.id);
+    if (selFrame && hitTestFrame(gp.x, gp.y, selFrame)) nearSelected = true;
+  }
+
+  // Scoped hit detection
+  const isLineTool = activeTool === 'line';
+  const isFrameTool = activeTool === 'small-frame' || activeTool === 'large-frame';
+  let hit;
+  if (isLineTool) hit = findHoveredByType(gp.x, gp.y, 'line');
+  else if (isFrameTool) hit = findHoveredByType(gp.x, gp.y, 'frame');
+  else hit = findHovered(gp.x, gp.y);
 
   if (activeTool === 'delete') {
     if (hit) handleDelete(gp);
     return;
   }
 
-  if (activeTool === 'line') {
+  if (isLineTool) {
     if (hit && !isPlacingLine) {
-      // Click on element → select it
       selectedElement = { type: hit.type, id: hit.id };
       render(); return;
     }
-    if (!hit && !isPlacingLine) { selectedElement = null; }
-    // Line placement
+    if (!hit && !nearSelected && !isPlacingLine) { selectedElement = null; }
     if (gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
-      const s = snapToMesh(gp.x, gp.y);
-      handleLinePlacement(clampToGrid(s.x, s.y));
+      if (!nearSelected) {
+        const s = snapToMesh(gp.x, gp.y);
+        handleLinePlacement(clampToGrid(s.x, s.y));
+      }
     }
     render(); return;
   }
 
-  if (activeTool === 'small-frame' || activeTool === 'large-frame') {
+  if (isFrameTool) {
     if (hit && !stagedFrame) {
       selectedElement = { type: hit.type, id: hit.id };
       render(); return;
     }
-    if (!hit && !stagedFrame) { selectedElement = null; }
-    if (gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
+    if (!hit && !nearSelected && !stagedFrame) { selectedElement = null; }
+    if (!nearSelected && gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
       const s = snapToMesh(gp.x, gp.y);
       handleFramePlacement(clampToGrid(s.x, s.y));
     }
     render(); return;
   }
 
-  // Select tool
-  if (hit) {
-    selectedElement = { type: hit.type, id: hit.id };
-  } else {
-    selectedElement = null;
-  }
   render();
 }
 
@@ -861,6 +1022,13 @@ function showTooltipEdit(x, y, authorName) {
   tooltipEl.classList.remove('hidden');
 }
 
+function showTooltipView(x, y, authorName) {
+  tooltipEl.innerHTML = `<span class="author-name">${authorName}</span>`;
+  tooltipEl.style.left = (x + 14) + 'px';
+  tooltipEl.style.top = (y - 32) + 'px';
+  tooltipEl.classList.remove('hidden');
+}
+
 function hideTooltip() { tooltipEl.classList.add('hidden'); }
 
 // ── Notifications ────────────────────────────────────────────────────────────
@@ -871,13 +1039,19 @@ function renderNotifications() {
   if (my.length === 0) { notifList.innerHTML = '<p style="color:var(--text-dim);font-size:14px;text-align:center;padding:24px;font-style:italic">No notifications</p>'; return; }
   for (const req of my) {
     const div = document.createElement('div');
-    div.className = `notif-item ${req.status !== 'pending' ? 'notif-resolved' : ''}`;
-    div.innerHTML = `<div class="notif-text"><strong>${req.requesterName}</strong> wants to delete your ${req.elementType}</div>
-      ${req.status === 'pending' ? `<div class="notif-actions"><button class="approve-btn" onclick="window._approveDelete('${req.id}')">Approve</button><button class="deny-btn" onclick="window._denyDelete('${req.id}')">Deny</button></div>` : `<div class="notif-status ${req.status}">${req.status}</div>`}`;
+    if (req.status === 'info') {
+      // Edit notification — info only, no action needed
+      div.className = 'notif-item notif-info';
+      div.innerHTML = `<div class="notif-text">${req.message || `<strong>${req.requesterName}</strong> edited your line`}</div>`;
+    } else {
+      div.className = `notif-item ${req.status !== 'pending' ? 'notif-resolved' : ''}`;
+      div.innerHTML = `<div class="notif-text"><strong>${req.requesterName}</strong> wants to delete your ${req.elementType}</div>
+        ${req.status === 'pending' ? `<div class="notif-actions"><button class="approve-btn" onclick="window._approveDelete('${req.id}')">Approve</button><button class="deny-btn" onclick="window._denyDelete('${req.id}')">Deny</button></div>` : `<div class="notif-status ${req.status}">${req.status}</div>`}`;
+    }
     notifList.appendChild(div);
   }
-  const pending = my.filter(r => r.status === 'pending').length;
-  if (pending > 0) { notifBadge.textContent = '!'; notifBadge.classList.remove('hidden'); }
+  const actionable = my.filter(r => r.status === 'pending' || r.status === 'info').length;
+  if (actionable > 0) { notifBadge.textContent = '!'; notifBadge.classList.remove('hidden'); }
   else { notifBadge.classList.add('hidden'); }
 }
 
@@ -887,19 +1061,51 @@ window._denyDelete = (id) => socket.emit('deny-delete', { requestId: id });
 // ── Timeline ─────────────────────────────────────────────────────────────────
 
 function renderTimeline() {
-  timelineTrack.innerHTML = '';
-  const ct = document.createElement('button');
-  ct.className = `timeline-tab ${viewingSnapshot === null ? 'active' : ''}`;
-  ct.textContent = 'Current';
-  ct.addEventListener('click', () => { viewingSnapshot = null; renderTimeline(); render(); });
-  timelineTrack.appendChild(ct);
-  for (let i = 0; i < snapshots.length; i++) {
-    const t = document.createElement('button');
-    t.className = `timeline-tab ${viewingSnapshot === i ? 'active' : ''}`;
-    t.textContent = `${snapshots[i].elementCount} elements`;
-    t.addEventListener('click', () => { viewingSnapshot = i; renderTimeline(); render(); });
-    timelineTrack.appendChild(t);
+  const total = snapshots.length; // 0 = no snapshots yet
+  playheadSlider.max = total;     // max = snapshots.length, value at max = "Current"
+  playheadSlider.value = viewingSnapshot !== null ? viewingSnapshot : total;
+
+  // Render tick marks for each snapshot
+  playheadTicks.innerHTML = '';
+  if (total > 0) {
+    for (let i = 0; i < total; i++) {
+      const tick = document.createElement('div');
+      tick.className = 'playhead-tick';
+      tick.style.left = (total > 0 ? (i / total) * 100 : 0) + '%';
+      const sName = snapshots[i].editorName || ('Snapshot ' + (i + 1));
+      const sTime = formatTimestamp(snapshots[i].timestamp);
+      tick.title = sTime ? `${sName} — ${sTime}` : sName;
+      playheadTicks.appendChild(tick);
+    }
   }
+
+  updatePlayheadInfo();
+}
+
+function updatePlayheadInfo() {
+  const val = parseInt(playheadSlider.value);
+  const total = snapshots.length;
+  if (val >= total) {
+    playheadInfo.textContent = 'Current';
+  } else {
+    const snap = snapshots[val];
+    const name = snap.editorName || ('Snapshot ' + (val + 1));
+    const time = formatTimestamp(snap.timestamp);
+    playheadInfo.textContent = time ? `${name} — ${time}` : name;
+  }
+}
+
+function initPlayhead() {
+  playheadSlider.addEventListener('input', () => {
+    const val = parseInt(playheadSlider.value);
+    if (val >= snapshots.length) {
+      viewingSnapshot = null;
+    } else {
+      viewingSnapshot = val;
+    }
+    updatePlayheadInfo();
+    render();
+  });
 }
 
 // ── Tool Selection ───────────────────────────────────────────────────────────
@@ -914,7 +1120,7 @@ function initTools() {
       btn.classList.add('active');
       selectedElement = null;
       hoverInsertPoint = null;
-      canvas.style.cursor = (activeTool === 'select') ? 'default' : 'crosshair';
+      canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
       render();
     });
   });
@@ -943,8 +1149,32 @@ function initSocket() {
   socket.on('delete-request', (r) => { deleteRequests.push(r); renderNotifications(); });
   socket.on('delete-approved', (d) => { const r = deleteRequests.find(x => x.id === d.requestId); if (r) r.status = 'approved'; if (d.elementType === 'line') lines = lines.filter(l => l.id !== d.elementId); else frames = frames.filter(f => f.id !== d.elementId); renderNotifications(); render(); });
   socket.on('delete-denied', (d) => { const r = deleteRequests.find(x => x.id === d.requestId); if (r) r.status = 'denied'; renderNotifications(); });
-  socket.on('element-count', (c) => { totalElements = c; });
-  socket.on('snapshot-added', (s) => { snapshots.push(s); renderTimeline(); });
+  socket.on('element-count', () => { /* legacy, ignored */ });
+  socket.on('line-edited-notification', (data) => {
+    // Only show if I'm the author of the line being edited
+    if (data.authorId !== currentUser?.id) return;
+    // Avoid duplicate notifications from the same editor in quick succession
+    const recent = deleteRequests.find(r => r.status === 'info' && r.requesterId === data.editorId && r.elementId === data.lineId);
+    if (recent) return;
+    deleteRequests.push({
+      id: data.id,
+      requesterId: data.editorId,
+      requesterName: data.editorName,
+      elementId: data.lineId,
+      elementType: 'line',
+      elementAuthorId: currentUser.id,
+      elementAuthorName: currentUser.name,
+      status: 'info',
+      message: data.message
+    });
+    renderNotifications();
+  });
+  socket.on('snapshot-added', (s) => {
+    const wasAtCurrent = viewingSnapshot === null;
+    snapshots.push(s);
+    if (wasAtCurrent) viewingSnapshot = null; // stay at current
+    renderTimeline();
+  });
 }
 
 // ── Login ────────────────────────────────────────────────────────────────────
@@ -962,10 +1192,80 @@ function doLogin() {
   if (!email || !email.includes('@')) { emailInput.style.borderColor = '#cc2222'; ok = false; } else emailInput.style.borderColor = '';
   if (!ok) return;
   loginScreen.classList.add('hidden'); appDiv.classList.remove('hidden');
-  initCanvas(); initInput(); initTools(); initZoom();
-  document.querySelector('[data-tool="select"]').classList.add('active');
+  if (window._startMusic) window._startMusic();
+  initCanvas(); initInput(); initTools(); initZoom(); initPlayhead();
+  document.querySelector('[data-tool="view"]').classList.add('active');
   initSocket(); socket.emit('join', { name, email });
 }
+
+// ── PDF Export ───────────────────────────────────────────────────────────────
+
+function exportPDF() {
+  // Render the current or snapshot view to a temporary high-res canvas, then convert to PDF
+  const pdfW = 1600, pdfH = pdfW * (GRID_HEIGHT_FT / GRID_WIDTH_FT) + 80;
+  const offscreen = document.createElement('canvas');
+  offscreen.width = pdfW;
+  offscreen.height = pdfH;
+  const oc = offscreen.getContext('2d');
+
+  // Save current state
+  const savedCtx = ctx, savedCanvas = canvas;
+  const savedBaseScale = baseScale, savedZoom = zoomLevel;
+  const savedVCX = viewCenterX, savedVCY = viewCenterY;
+
+  // Temporarily swap to offscreen
+  canvas = offscreen;
+  ctx = oc;
+  baseScale = (pdfW - 40) / GRID_WIDTH_FT;
+  zoomLevel = 1;
+  viewCenterX = GRID_WIDTH_FT / 2;
+  viewCenterY = GRID_HEIGHT_FT / 2;
+
+  // White background
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, pdfW, pdfH);
+
+  const dl = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.lines || [] : lines;
+  const df = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.frames || [] : frames;
+
+  // Shift down a bit for title
+  ctx.save();
+  ctx.translate(0, 40);
+  drawGrid();
+  drawLines(dl);
+  drawFrames(df, dl);
+  ctx.restore();
+
+  // Title: project name + date
+  const ts = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.timestamp : Date.now();
+  const dateStr = formatTimestamp(ts);
+  ctx.fillStyle = '#c0c0c0';
+  ctx.font = '20px "Cormorant Garamond", Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Collaboration in Line', 20, 28);
+  ctx.fillStyle = '#777777';
+  ctx.font = '14px "Cormorant Garamond", Georgia, serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(dateStr, pdfW - 20, 28);
+
+  // Restore
+  canvas = savedCanvas;
+  ctx = savedCtx;
+  baseScale = savedBaseScale;
+  zoomLevel = savedZoom;
+  viewCenterX = savedVCX;
+  viewCenterY = savedVCY;
+
+  // Convert to image and trigger download as PDF-like image
+  // For true PDF we'd need a library, but a high-res PNG is more practical
+  const link = document.createElement('a');
+  link.download = 'collaboration-in-line' + (viewingSnapshot !== null ? `-snapshot-${viewingSnapshot + 1}` : '') + '.png';
+  link.href = offscreen.toDataURL('image/png');
+  link.click();
+}
+
+const pdfBtn = document.getElementById('pdf-download');
+pdfBtn.addEventListener('click', exportPDF);
 
 // ── Toggles ──────────────────────────────────────────────────────────────────
 

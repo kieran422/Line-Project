@@ -63,6 +63,8 @@ for (const r of savedState.deleteRequests) deleteRequests.set(r.id, r);
 
 const snapshots = savedState.snapshots || [];
 let totalElements = savedState.totalElements || 0;
+let lastEditorId = savedState.lastEditorId || null;
+let lastEditorName = savedState.lastEditorName || null;
 
 const COLORS = [
   '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7be',
@@ -92,7 +94,9 @@ function saveState() {
     frames: Array.from(frames.values()),
     deleteRequests: Array.from(deleteRequests.values()),
     snapshots,
-    totalElements
+    totalElements,
+    lastEditorId,
+    lastEditorName
   });
 }
 
@@ -102,8 +106,28 @@ function getFullState() {
     frames: Array.from(frames.values()),
     deleteRequests: Array.from(deleteRequests.values()),
     snapshots,
-    totalElements
+    totalElements,
+    lastEditorId,
+    lastEditorName
   };
+}
+
+// Snapshot on editor handoff: when a new user edits, capture previous user's work
+function onEdit(profileId, profileName) {
+  if (lastEditorId && lastEditorId !== profileId) {
+    // Editor changed — snapshot the state as left by the previous editor
+    snapshots.push({
+      id: snapshots.length,
+      editorName: lastEditorName,
+      editorId: lastEditorId,
+      lines: Array.from(lines.values()).map(l => ({ ...l, points: [...l.points] })),
+      frames: Array.from(frames.values()).map(f => ({ ...f })),
+      timestamp: Date.now()
+    });
+    io.emit('snapshot-added', snapshots[snapshots.length - 1]);
+  }
+  lastEditorId = profileId;
+  lastEditorName = profileName;
 }
 
 function getOrCreateProfile(email, name) {
@@ -139,23 +163,7 @@ function getOrCreateProfile(email, name) {
   return profile;
 }
 
-function maybeSnapshot() {
-  const snapshotThreshold = Math.floor(totalElements / 5) * 5;
-  const existingCount = snapshots.length;
-  const expectedCount = snapshotThreshold / 5;
-
-  if (expectedCount > existingCount && totalElements >= 5) {
-    snapshots.push({
-      id: snapshots.length,
-      elementCount: totalElements,
-      lines: Array.from(lines.values()).map(l => ({ ...l, points: [...l.points] })),
-      frames: Array.from(frames.values()).map(f => ({ ...f })),
-      timestamp: Date.now()
-    });
-    io.emit('snapshot-added', snapshots[snapshots.length - 1]);
-    saveState();
-  }
-}
+// (old maybeSnapshot removed — replaced by onEdit handoff system)
 
 // ── Socket Events ──────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -185,6 +193,9 @@ io.on('connection', (socket) => {
     const existingLine = Array.from(lines.values()).find(l => l.authorId === profile.id);
     if (existingLine) return;
 
+    // Snapshot before this user's edit is applied
+    onEdit(profile.id, profile.name);
+
     const line = {
       id: uuidv4(),
       authorId: profile.id,
@@ -194,16 +205,17 @@ io.on('connection', (socket) => {
     };
     lines.set(line.id, line);
     totalElements++;
-    maybeSnapshot();
     saveState();
     io.emit('line-placed', line);
-    io.emit('element-count', totalElements);
   });
 
   socket.on('place-frame', (data) => {
     const profileId = sessions.get(socket.id);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (!profile) return;
+
+    // Snapshot before this user's edit is applied
+    onEdit(profile.id, profile.name);
 
     const frame = {
       id: uuidv4(),
@@ -217,15 +229,29 @@ io.on('connection', (socket) => {
     };
     frames.set(frame.id, frame);
     totalElements++;
-    maybeSnapshot();
     saveState();
     io.emit('frame-placed', frame);
-    io.emit('element-count', totalElements);
   });
 
   socket.on('edit-line', (data) => {
     const line = lines.get(data.id);
     if (!line) return;
+
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+
+    // Enforce 20ft max strip length server-side
+    const pts = data.points;
+    if (pts && pts.length >= 2) {
+      let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y;
+        total += Math.sqrt(dx * dx + dy * dy);
+      }
+      if (total > 22) return;
+    }
+
+    if (profile) onEdit(profile.id, profile.name);
     line.points = data.points;
     saveState();
     socket.broadcast.emit('line-updated', line);
@@ -234,15 +260,45 @@ io.on('connection', (socket) => {
   socket.on('edit-frame', (data) => {
     const frame = frames.get(data.id);
     if (!frame) return;
+
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+    if (profile) onEdit(profile.id, profile.name);
+
     frame.x = data.x;
     frame.y = data.y;
     saveState();
     socket.broadcast.emit('frame-updated', frame);
   });
 
+  socket.on('notify-edit', (data) => {
+    const profileId = sessions.get(socket.id);
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+    if (!profile || !data.authorId) return;
+    if (profile.id === data.authorId) return;
+
+    const notification = {
+      id: uuidv4(),
+      editorId: profile.id,
+      editorName: profile.name,
+      lineId: data.lineId,
+      authorId: data.authorId,
+      message: `${profile.name} is editing your line`,
+      timestamp: Date.now()
+    };
+
+    // Broadcast to all — clients filter by authorId
+    io.emit('line-edited-notification', notification);
+    console.log(`Edit notification: ${profile.name} editing ${data.authorName}'s line`);
+  });
+
   socket.on('delete-own', (data) => {
     const profileId = sessions.get(socket.id);
     if (!profileId) return;
+    const profile = Array.from(profiles.values()).find(p => p.id === profileId);
+
+    // Snapshot before this user's edit is applied
+    if (profile) onEdit(profile.id, profile.name);
 
     if (data.type === 'line') {
       const line = lines.get(data.id);

@@ -35,9 +35,9 @@
       </div>
       <div class="top-center">
         <div class="tool-group">
-          <button class="tool-btn" data-tool="select" title="Select & Edit">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
-            <span>Select</span>
+          <button class="tool-btn" data-tool="view" title="View Mode">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/></svg>
+            <span>View</span>
           </button>
           <button class="tool-btn" data-tool="line" title="Place LED Strip">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 C8 10, 16 10, 20 20"/><circle cx="4" cy="20" r="2" fill="currentColor"/><circle cx="20" cy="20" r="2" fill="currentColor"/></svg>
@@ -58,12 +58,29 @@
         </div>
       </div>
       <div class="top-right">
+        <button id="pdf-download" class="tool-action-btn" title="Download PDF">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>PDF</span>
+        </button>
         <button id="notifications-toggle" class="notif-btn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
           <span id="notif-badge" class="notif-badge hidden">!</span>
         </button>
       </div>
     </header>
+
+    <!-- AUDIO PLAYER BAR -->
+    <div id="audio-bar" class="hidden">
+      <button id="audio-play-pause" class="audio-btn" title="Play/Pause">
+        <svg id="audio-icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <svg id="audio-icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <span id="audio-title">Loading...</span>
+      <div id="audio-progress-wrap">
+        <div id="audio-progress-bar"></div>
+      </div>
+      <span id="audio-time">0:00 / 0:00</span>
+    </div>
 
     <!-- CANVAS AREA -->
     <div id="canvas-container">
@@ -99,13 +116,15 @@
       <div id="notifications-list" class="panel-body"></div>
     </aside>
 
-    <!-- BOTTOM BAR: TIMELINE + ZOOM -->
+    <!-- BOTTOM BAR: TIMELINE PLAYHEAD + ZOOM -->
     <div id="bottom-bar">
       <div id="timeline-section">
         <div id="timeline-label">Timeline</div>
-        <div id="timeline-track">
-          <button class="timeline-tab active" data-snapshot="current">Current</button>
+        <div id="playhead-wrap">
+          <input type="range" id="playhead-slider" min="0" max="0" step="1" value="0" />
+          <div id="playhead-ticks"></div>
         </div>
+        <span id="playhead-info">Current</span>
       </div>
       <div id="zoom-section">
         <span id="zoom-label">100%</span>
@@ -114,6 +133,114 @@
     </div>
 
   </div>
+
+  <!-- Audio Player -->
+  <script>
+  (function() {
+    const tracks = [
+      { src: '/audio/so-what.mp3', title: 'Miles Davis \u2014 So What' },
+      { src: '/audio/take-five.mp3', title: 'Dave Brubeck \u2014 Take Five' }
+    ];
+
+    if (Math.random() < 0.5) tracks.reverse();
+
+    let idx = 0;
+    let audio = null;
+    let started = false;
+    let isPlaying = false;
+
+    const bar = document.getElementById('audio-bar');
+    const titleEl = document.getElementById('audio-title');
+    const timeEl = document.getElementById('audio-time');
+    const progressBar = document.getElementById('audio-progress-bar');
+    const progressWrap = document.getElementById('audio-progress-wrap');
+    const playBtn = document.getElementById('audio-play-pause');
+    const iconPlay = document.getElementById('audio-icon-play');
+    const iconPause = document.getElementById('audio-icon-pause');
+
+    function fmt(s) {
+      if (!s || !isFinite(s)) return '0:00';
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return m + ':' + String(sec).padStart(2, '0');
+    }
+
+    function updateIcons() {
+      if (isPlaying) {
+        iconPlay.classList.add('hidden');
+        iconPause.classList.remove('hidden');
+      } else {
+        iconPlay.classList.remove('hidden');
+        iconPause.classList.add('hidden');
+      }
+    }
+
+    function loadTrack(i) {
+      idx = i % tracks.length;
+      audio.src = tracks[idx].src;
+      titleEl.textContent = tracks[idx].title;
+      timeEl.textContent = '0:00 / 0:00';
+      progressBar.style.width = '0%';
+      audio.load();
+      audio.play().then(() => { isPlaying = true; updateIcons(); }).catch(() => {});
+    }
+
+    function startMusic() {
+      if (started) return;
+      started = true;
+
+      audio = new Audio();
+      audio.volume = 0.3;
+      audio.preload = 'auto';
+
+      bar.classList.remove('hidden');
+
+      audio.addEventListener('timeupdate', () => {
+        if (audio.duration) {
+          const pct = (audio.currentTime / audio.duration) * 100;
+          progressBar.style.width = pct + '%';
+          timeEl.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
+        }
+      });
+
+      audio.addEventListener('ended', () => {
+        loadTrack(idx + 1);
+      });
+
+      audio.addEventListener('play', () => { isPlaying = true; updateIcons(); });
+      audio.addEventListener('pause', () => { isPlaying = false; updateIcons(); });
+
+      let errCount = 0;
+      audio.addEventListener('error', () => {
+        errCount++;
+        if (errCount >= tracks.length) {
+          titleEl.textContent = 'Audio unavailable';
+          started = false;
+          return;
+        }
+        setTimeout(() => loadTrack(idx + 1), 500);
+      });
+
+      // Play/pause toggle
+      playBtn.addEventListener('click', () => {
+        if (!audio.src) return;
+        if (isPlaying) { audio.pause(); } else { audio.play().catch(() => {}); }
+      });
+
+      // Click on progress bar to seek
+      progressWrap.addEventListener('click', (e) => {
+        if (!audio.duration) return;
+        const rect = progressWrap.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = pct * audio.duration;
+      });
+
+      loadTrack(0);
+    }
+
+    window._startMusic = startMusic;
+  })();
+  </script>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/app.js"></script>
