@@ -195,14 +195,28 @@ function computeSegmentCurve(p1, p2, numPoints) {
   return points;
 }
 
+// Curve cache to avoid recomputing on every render
+const curveCache = new Map();
+
+function getCurveKey(pts) {
+  let k = '';
+  for (const p of pts) k += p.x.toFixed(4) + ',' + p.y.toFixed(4) + ';';
+  return k;
+}
+
 function computeLineCurve(pts) {
   if (pts.length < 2) return [];
+  const key = getCurveKey(pts);
+  if (curveCache.has(key)) return curveCache.get(key);
   const all = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const seg = computeSegmentCurve(pts[i], pts[i + 1], CATENARY_POINTS);
     if (i > 0) seg.shift();
     all.push(...seg);
   }
+  // Keep cache small
+  if (curveCache.size > 100) curveCache.clear();
+  curveCache.set(key, all);
   return all;
 }
 
@@ -410,29 +424,17 @@ function drawFrames(df, dl) {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // Outer feather (wide, very soft)
+      // Feathered glow (2 passes instead of 4 for performance)
       ctx.shadowColor = 'rgba(255,255,255,0.4)';
-      ctx.shadowBlur = 18;
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.lineWidth = LED_LINE_WIDTH * 5;
-      strokeNear();
-
-      // Mid feather
-      ctx.shadowBlur = 10;
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.lineWidth = LED_LINE_WIDTH * 3;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = LED_LINE_WIDTH * 4;
       strokeNear();
 
       // Core — pure white at 1.5× line weight
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 4;
       ctx.strokeStyle = 'rgba(255,255,255,0.55)';
       ctx.lineWidth = LED_LINE_WIDTH * 1.5;
-      strokeNear();
-
-      // Bright center
-      ctx.shadowBlur = 2;
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = LED_LINE_WIDTH * 0.8;
       strokeNear();
 
       ctx.shadowBlur = 0;
@@ -778,10 +780,10 @@ function onMouseMove(e) {
     canvas.style.cursor = (activeTool === 'view') ? 'default' : 'crosshair';
   }
 
-  if (hoveredElement?.id !== prev?.id) render();
+  if (hoveredElement?.id !== prev?.id) requestRender();
 
   // Preview re-render
-  if (isPlacingLine || stagedFrame || isFrameTool) render();
+  if (isPlacingLine || stagedFrame || isFrameTool) requestRender();
 }
 
 function onMouseDown(e) {
@@ -935,14 +937,21 @@ function onClick(e) {
   }
 
   if (isFrameTool) {
-    if (hit && !stagedFrame) {
+    // Only select frames matching the current tool type for editing
+    const toolFtype = activeTool === 'small-frame' ? 'small' : 'large';
+    const matchingHit = hit && hit.element.type === toolFtype;
+
+    if (matchingHit && !stagedFrame) {
       selectedElement = { type: hit.type, id: hit.id };
       render(); return;
     }
-    if (!hit && !nearSelected && !stagedFrame) { selectedElement = null; }
-    if (!nearSelected && gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
-      const s = snapToMesh(gp.x, gp.y);
-      handleFramePlacement(clampToGrid(s.x, s.y));
+    if (!matchingHit && !nearSelected && !stagedFrame) { selectedElement = null; }
+    // Always allow placement — don't block on nearSelected for frame tools
+    if (gp.x >= 0 && gp.x <= GRID_WIDTH_FT && gp.y >= 0 && gp.y <= GRID_HEIGHT_FT) {
+      if (!stagedFrame) {
+        const s = snapToMesh(gp.x, gp.y);
+        handleFramePlacement(clampToGrid(s.x, s.y));
+      }
     }
     render(); return;
   }
@@ -1274,9 +1283,15 @@ closeNotifBtn.addEventListener('click', () => notifPanel.classList.add('hidden')
 
 // ── Animation Loop ───────────────────────────────────────────────────────────
 
+let needsRender = false;
+function requestRender() { needsRender = true; }
+
 function animLoop() {
   requestAnimationFrame(animLoop);
-  if (isPlacingLine || stagedFrame || isDragging || isPanning || activeTool === 'small-frame' || activeTool === 'large-frame') render();
+  if (needsRender) {
+    needsRender = false;
+    render();
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
