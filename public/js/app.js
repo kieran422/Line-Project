@@ -1798,29 +1798,26 @@ function showLeaderboard(data) {
 
     div.addEventListener('click', () => {
       const wasActive = div.classList.contains('leaderboard-active');
+      const wasOpen = div.classList.contains('leaderboard-open');
 
-      // Close all dropdowns and deselect all
-      leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => {
-        el.classList.remove('leaderboard-active', 'leaderboard-open');
-      });
-
-      if (wasActive) {
-        // Clicking same entry — deselect
-        selectedElement = null;
-        leaderboardHighlight = null;
-      } else {
-        // Clicking new entry — highlight only, no dropdown
+      if (!wasActive) {
+        // First click: select and highlight line, close others
+        leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => {
+          el.classList.remove('leaderboard-active', 'leaderboard-open');
+        });
         div.classList.add('leaderboard-active');
         selectedElement = { type: 'line', id: entry.lineId };
         leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
+      } else if (!wasOpen) {
+        // Second click: open dropdown
+        div.classList.add('leaderboard-open');
+      } else {
+        // Third click: close dropdown and deselect
+        div.classList.remove('leaderboard-active', 'leaderboard-open');
+        selectedElement = null;
+        leaderboardHighlight = null;
       }
       render();
-    });
-
-    // Chevron toggles the vote dropdown independently
-    header.querySelector('.leaderboard-chevron').addEventListener('click', (e) => {
-      e.stopPropagation();
-      div.classList.toggle('leaderboard-open');
     });
     leaderboardList.appendChild(div);
   }

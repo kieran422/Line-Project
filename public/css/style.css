@@ -997,9 +997,6 @@ body {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 3px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
   cursor: pointer;
   transition: all 0.15s;
 }
