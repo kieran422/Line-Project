@@ -1488,17 +1488,15 @@ const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardRaterCount = document.getElementById('leaderboard-rater-count');
 const closeLeaderboard = document.getElementById('close-leaderboard');
-const leaderboardRetake = document.getElementById('leaderboard-retake');
 
 leaderboardToggle.addEventListener('click', () => {
   if (!isAdmin) {
-    // Show admin modal
     adminModal.classList.remove('hidden');
     adminPasswordInput.value = '';
     adminPasswordInput.focus();
     return;
   }
-  startSurvey();
+  checkAndStartSurvey();
 });
 
 surveyCancelBtn.addEventListener('click', () => {
@@ -1507,10 +1505,6 @@ surveyCancelBtn.addEventListener('click', () => {
 });
 
 closeLeaderboard.addEventListener('click', () => leaderboardPanel.classList.add('hidden'));
-leaderboardRetake.addEventListener('click', () => {
-  leaderboardPanel.classList.add('hidden');
-  startSurvey();
-});
 
 function renderLineScreengrab(highlightLineId) {
   const grabW = 800, grabH = Math.round(grabW * (GRID_HEIGHT_FT / GRID_WIDTH_FT));
@@ -1578,13 +1572,30 @@ function renderLineScreengrab(highlightLineId) {
   return dataUrl;
 }
 
-function startSurvey() {
-  surveyLines = lines.filter(l => l.points.length >= 2);
-  if (surveyLines.length === 0) { showToast('No lines to rate.'); return; }
-  surveyIndex = 0;
-  surveyRatings = [];
-  surveyActive = true;
-  showSurveyStep();
+function checkAndStartSurvey() {
+  // Ask server which lines this user hasn't rated yet
+  fetch('/api/admin/unrated', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: 'all hail ai', email: currentUser.email })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const unratedIds = new Set(data.unrated || []);
+    surveyLines = lines.filter(l => l.points.length >= 2 && unratedIds.has(l.id));
+
+    if (surveyLines.length === 0) {
+      // All lines rated — go straight to leaderboard
+      loadLeaderboard();
+      return;
+    }
+
+    surveyIndex = 0;
+    surveyRatings = [];
+    surveyActive = true;
+    showSurveyStep();
+  })
+  .catch(() => showToast('Error checking ratings.'));
 }
 
 function showSurveyStep() {

@@ -123,6 +123,22 @@ app.post('/api/admin/submit-ratings', (req, res) => {
   return res.json({ ok: true });
 });
 
+// Get unrated lines for a user
+app.post('/api/admin/unrated', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+  const email = (req.body.email || '').toLowerCase().trim();
+  const profile = profiles.get(email);
+  if (!profile) return res.status(404).json({ error: 'user not found' });
+
+  const unrated = [];
+  for (const [id, line] of lines.entries()) {
+    if (line.points.length < 2) continue;
+    const key = profile.id + ':' + id;
+    if (!ratings.has(key)) unrated.push(id);
+  }
+  return res.json({ unrated });
+});
+
 // Get leaderboard
 app.post('/api/admin/leaderboard', (req, res) => {
   if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
@@ -446,6 +462,10 @@ io.on('connection', (socket) => {
       const line = lines.get(data.id);
       if (line && (line.authorId === profileId || isAdminUser)) {
         lines.delete(data.id);
+        // Remove all ratings for this deleted line
+        for (const [key, r] of ratings.entries()) {
+          if (r.lineId === data.id) ratings.delete(key);
+        }
         saveState();
         io.emit('element-deleted', { id: data.id, type: 'line' });
       }
