@@ -1051,6 +1051,41 @@ body {
   text-align: right;
 }
 
+.leaderboard-item-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.leaderboard-votes-detail {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.leaderboard-vote-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  padding-left: 32px;
+}
+
+.vote-rater {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.vote-score {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--silver);
+  letter-spacing: 1px;
+}
+
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -1764,8 +1764,30 @@ function showLeaderboard(data) {
     div.className = 'leaderboard-item';
     div.dataset.lineid = entry.lineId;
     const outOf5 = (entry.averageScore / 2).toFixed(1);
-    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${outOf5} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
-    div.addEventListener('click', () => {
+
+    const header = document.createElement('div');
+    header.className = 'leaderboard-item-header';
+    header.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${outOf5} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+
+    const votesDiv = document.createElement('div');
+    votesDiv.className = 'leaderboard-votes-detail hidden';
+    if (entry.votes && entry.votes.length > 0) {
+      for (const v of entry.votes) {
+        const vRow = document.createElement('div');
+        vRow.className = 'leaderboard-vote-row';
+        const vScore = (v.score / 2).toFixed(1);
+        vRow.innerHTML = `<span class="vote-rater">${v.raterName}</span><span class="vote-score">${vScore} \u2605</span>`;
+        votesDiv.appendChild(vRow);
+      }
+    }
+
+    div.appendChild(header);
+    div.appendChild(votesDiv);
+
+    header.addEventListener('click', () => {
+      // Toggle vote details
+      votesDiv.classList.toggle('hidden');
+      // Highlight line on canvas
       selectedElement = { type: 'line', id: entry.lineId };
       leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
       leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => el.classList.remove('leaderboard-active'));

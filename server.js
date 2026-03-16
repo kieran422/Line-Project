@@ -143,11 +143,12 @@ app.post('/api/ratings/leaderboard', (req, res) => {
   // Aggregate ratings per line
   const lineScores = new Map(); // lineId → { scores: [], authorName, authorId }
   for (const r of ratings.values()) {
-    if (!lines.has(r.lineId)) continue; // skip ratings for deleted lines
+    if (!lines.has(r.lineId)) continue;
     if (!lineScores.has(r.lineId)) {
-      lineScores.set(r.lineId, { scores: [], authorName: r.lineAuthorName, authorId: r.lineAuthorId });
+      lineScores.set(r.lineId, { scores: [], votes: [], authorName: r.lineAuthorName, authorId: r.lineAuthorId });
     }
     lineScores.get(r.lineId).scores.push(r.score);
+    lineScores.get(r.lineId).votes.push({ raterName: r.raterName, score: r.score });
   }
 
   // Compute averages and rank
@@ -159,7 +160,8 @@ app.post('/api/ratings/leaderboard', (req, res) => {
       authorName: data.authorName,
       authorId: data.authorId,
       averageScore: avg,
-      totalRatings: data.scores.length
+      totalRatings: data.scores.length,
+      votes: data.votes
     });
   }
   leaderboard.sort((a, b) => b.averageScore - a.averageScore);
