@@ -1796,7 +1796,7 @@ function showLeaderboard(data) {
     div.appendChild(header);
     div.appendChild(dropdown);
 
-    header.addEventListener('click', () => {
+    div.addEventListener('click', () => {
       const wasActive = div.classList.contains('leaderboard-active');
 
       // Close all dropdowns and deselect all
