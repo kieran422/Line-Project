@@ -73,6 +73,10 @@ let mouseX = 0, mouseY = 0;
 let toastTimer = null;
 let isAdmin = false;
 
+// Undo stack — stores snapshots of state before each action in this session
+const undoStack = [];
+const MAX_UNDO = 50;
+
 // ── DOM Elements ─────────────────────────────────────────────────────────────
 const loginScreen = document.getElementById('login-screen');
 const appDiv = document.getElementById('app');
@@ -173,6 +177,40 @@ function userHasPlacedLine() {
 
 function isSelected(type, id) {
   return selectedElement && selectedElement.type === type && selectedElement.id === id;
+}
+
+// ── Undo System ──────────────────────────────────────────────────────────────
+
+function saveUndo() {
+  // Snapshot only elements owned by or edited by the current user
+  const snap = {
+    lines: lines.map(l => ({ ...l, points: l.points.map(p => ({ ...p })) })),
+    frames: frames.map(f => ({ ...f }))
+  };
+  undoStack.push(snap);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+function performUndo() {
+  if (undoStack.length === 0) { showToast('Nothing to undo.'); return; }
+  const snap = undoStack.pop();
+
+  // Restore lines — only revert lines that the current user owns or has edited
+  // We restore the full state from the snapshot to keep it simple and correct
+  lines.length = 0;
+  for (const l of snap.lines) lines.push(l);
+
+  frames.length = 0;
+  for (const f of snap.frames) frames.push(f);
+
+  // Sync all changes to server
+  for (const l of lines) socket.emit('edit-line', { id: l.id, points: l.points });
+  for (const f of frames) socket.emit('edit-frame', { id: f.id, x: f.x, y: f.y });
+
+  selectedElement = null;
+  selectedPointIndex = -1;
+  render();
+  showToast('Undone.');
 }
 
 // ── Catenary / Gravity Physics ───────────────────────────────────────────────
@@ -708,11 +746,19 @@ function initInput() {
   canvas.addEventListener('click', onClick);
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  // Delete attachment point with Delete or Backspace key
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     // Don't intercept if typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // Cmd+Z / Ctrl+Z — undo
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+      e.preventDefault();
+      performUndo();
+      return;
+    }
+
+    // Delete attachment point with Delete or Backspace key
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
 
     if (activeTool !== 'line' || !selectedElement || selectedElement.type !== 'line') return;
     if (selectedPointIndex < 0) return;
@@ -732,6 +778,7 @@ function initInput() {
     }
 
     e.preventDefault();
+    saveUndo();
     line.points.splice(selectedPointIndex, 1);
     selectedPointIndex = -1;
     hoveredPointIndex = -1;
@@ -861,6 +908,7 @@ function onMouseDown(e) {
       const idx = hoverInsertPoint.segmentIndex + 1;
       const s = snapToMesh(hoverInsertPoint.x, hoverInsertPoint.y);
       const c = clampToGrid(s.x, s.y);
+      saveUndo();
       line.points.splice(idx, 0, { x: c.x, y: c.y });
       const overLimit = computeTotalLineLength(line.points) > MAX_STRIP_LENGTH_FT;
       socket.emit('edit-line', { id: line.id, points: line.points });
@@ -891,6 +939,7 @@ function onMouseDown(e) {
       if (ptIdx >= 0) {
         // Select this point (will confirm on mouseUp if no drag)
         selectedPointIndex = ptIdx;
+        saveUndo();
         isDragging = true;
         dragTarget = { type: 'line-point', id: selLine.id, pointIndex: ptIdx };
         canvas.style.cursor = 'grabbing';
@@ -909,6 +958,7 @@ function onMouseDown(e) {
   if (canDragFrame && !stagedFrame) {
     for (let i = frames.length - 1; i >= 0; i--) {
       if (hitTestFrame(gp.x, gp.y, frames[i])) {
+        saveUndo();
         isDragging = true;
         dragTarget = { type: 'frame', id: frames[i].id };
         selectedElement = { type: 'frame', id: frames[i].id };
@@ -1044,6 +1094,7 @@ function updateLineStatus() {
 
 function commitLine() {
   if (currentLinePoints.length < 2) return;
+  saveUndo();
   socket.emit('place-line', { points: currentLinePoints });
   cancelLine();
 }
@@ -1069,7 +1120,7 @@ function handleFramePlacement(gridPos) {
   frameStatusEl.classList.remove('hidden'); render();
 }
 
-function commitFrame() { if (!stagedFrame) return; socket.emit('place-frame', stagedFrame); cancelFrame(); }
+function commitFrame() { if (!stagedFrame) return; saveUndo(); socket.emit('place-frame', stagedFrame); cancelFrame(); }
 function cancelFrame() { stagedFrame = null; frameStatusEl.classList.add('hidden'); render(); }
 
 // ── Delete ───────────────────────────────────────────────────────────────────
@@ -1077,6 +1128,7 @@ function cancelFrame() { stagedFrame = null; frameStatusEl.classList.add('hidden
 function handleDelete(gp) {
   const hit = findHovered(gp.x, gp.y);
   if (!hit) return;
+  saveUndo();
   if (hit.element.authorId === currentUser.id || isAdmin) {
     socket.emit('delete-own', { id: hit.id, type: hit.type, admin: isAdmin });
   } else {
