@@ -947,30 +947,23 @@ body {
 
 .survey-rating-grid {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   justify-content: center;
-  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 
-.survey-rating-btn {
-  font-family: var(--font-display);
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--surface2);
-  color: var(--text);
-  font-size: 16px;
-  font-weight: 600;
+.survey-star {
+  font-size: 32px;
   cursor: pointer;
-  transition: all 0.15s;
+  color: var(--text-dim);
+  transition: color 0.1s, transform 0.1s;
+  user-select: none;
+  line-height: 1;
 }
 
-.survey-rating-btn:hover {
-  background: var(--silver);
-  color: var(--bg);
-  border-color: var(--silver);
+.survey-star:hover {
+  color: #f0c040;
+  transform: scale(1.15);
 }
 
 /* ── Leaderboard ──────────────────────────────────────────────────────────── */
@@ -1010,11 +1003,20 @@ body {
   flex: 1;
 }
 
+.leaderboard-stars {
+  font-size: 14px;
+  color: #f0c040;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
 .leaderboard-score {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--silver-bright);
+  min-width: 28px;
+  text-align: right;
 }
 
 .leaderboard-votes {

@@ -1608,11 +1608,23 @@ function showSurveyStep() {
 
   surveyRatingBtns.innerHTML = '';
   for (let i = 1; i <= 10; i++) {
-    const btn = document.createElement('button');
-    btn.className = 'survey-rating-btn';
-    btn.textContent = i;
-    btn.addEventListener('click', () => rateLine(i));
-    surveyRatingBtns.appendChild(btn);
+    const star = document.createElement('span');
+    star.className = 'survey-star';
+    star.textContent = '\u2606'; // empty star
+    star.dataset.value = i;
+    star.addEventListener('mouseenter', () => {
+      // Fill stars up to this one on hover
+      surveyRatingBtns.querySelectorAll('.survey-star').forEach(s => {
+        s.textContent = parseInt(s.dataset.value) <= i ? '\u2605' : '\u2606';
+      });
+    });
+    star.addEventListener('mouseleave', () => {
+      surveyRatingBtns.querySelectorAll('.survey-star').forEach(s => {
+        s.textContent = '\u2606';
+      });
+    });
+    star.addEventListener('click', () => rateLine(i));
+    surveyRatingBtns.appendChild(star);
   }
 
   surveyModal.classList.remove('hidden');
@@ -1666,7 +1678,9 @@ function showLeaderboard(data) {
   for (const entry of data.leaderboard) {
     const div = document.createElement('div');
     div.className = 'leaderboard-item';
-    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)}</span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    const fullStars = Math.round(entry.averageScore);
+    const stars = '\u2605'.repeat(fullStars) + '\u2606'.repeat(10 - fullStars);
+    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-stars">${stars}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)}</span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
     leaderboardList.appendChild(div);
   }
 
