@@ -1547,7 +1547,18 @@ const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardRaterCount = document.getElementById('leaderboard-rater-count');
 const closeLeaderboard = document.getElementById('close-leaderboard');
 
+function closeAllPanels() {
+  leaderboardPanel.classList.add('hidden');
+  adminPanel.classList.add('hidden');
+  notifPanel.classList.add('hidden');
+  selectedElement = null;
+  leaderboardHighlight = null;
+}
+
 leaderboardToggle.addEventListener('click', () => {
+  const wasOpen = !leaderboardPanel.classList.contains('hidden');
+  closeAllPanels();
+  if (wasOpen) { render(); return; }
   checkAndStartSurvey();
 });
 
@@ -1557,9 +1568,7 @@ surveyCancelBtn.addEventListener('click', () => {
 });
 
 closeLeaderboard.addEventListener('click', () => {
-  leaderboardPanel.classList.add('hidden');
-  selectedElement = null;
-  leaderboardHighlight = null;
+  closeAllPanels();
   render();
 });
 
@@ -1859,8 +1868,13 @@ const closeAdmin = document.getElementById('close-admin');
 
 adminToggle.addEventListener('click', () => {
   if (isAdmin) {
-    loadAdminUsers();
-    adminPanel.classList.toggle('hidden');
+    const wasOpen = !adminPanel.classList.contains('hidden');
+    closeAllPanels();
+    if (!wasOpen) {
+      loadAdminUsers();
+      adminPanel.classList.remove('hidden');
+    }
+    render();
   } else {
     adminModal.classList.remove('hidden');
     adminPasswordInput.value = '';
@@ -1894,7 +1908,7 @@ adminSubmit.addEventListener('click', () => {
   }
 });
 
-closeAdmin.addEventListener('click', () => adminPanel.classList.add('hidden'));
+closeAdmin.addEventListener('click', () => { closeAllPanels(); render(); });
 
 // Event delegation for admin delete buttons
 adminUserList.addEventListener('click', (e) => {
@@ -1944,8 +1958,13 @@ function loadAdminUsers() {
 
 // ── Toggles ──────────────────────────────────────────────────────────────────
 
-notifToggle.addEventListener('click', () => notifPanel.classList.toggle('hidden'));
-closeNotifBtn.addEventListener('click', () => notifPanel.classList.add('hidden'));
+notifToggle.addEventListener('click', () => {
+  const wasOpen = !notifPanel.classList.contains('hidden');
+  closeAllPanels();
+  if (!wasOpen) notifPanel.classList.remove('hidden');
+  render();
+});
+closeNotifBtn.addEventListener('click', () => { closeAllPanels(); render(); });
 
 // ── Animation Loop ───────────────────────────────────────────────────────────
 
