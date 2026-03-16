@@ -23,6 +23,17 @@ app.post('/api/lookup', (req, res) => {
   return res.json({ found: false });
 });
 
+// Grant admin to a user by email (requires passcode)
+app.post('/api/admin/grant', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+  const email = (req.body.email || '').toLowerCase().trim();
+  const profile = profiles.get(email);
+  if (!profile) return res.status(404).json({ error: 'user not found' });
+  profile.isAdmin = true;
+  saveProfiles();
+  return res.json({ ok: true });
+});
+
 // Admin endpoint — returns all users (requires passcode)
 app.post('/api/admin/users', (req, res) => {
   if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
@@ -238,7 +249,7 @@ io.on('connection', (socket) => {
 
     // Send the user their profile info + full state
     socket.emit('joined', {
-      user: { id: profile.id, name: profile.name, email: profile.email, color: profile.color },
+      user: { id: profile.id, name: profile.name, email: profile.email, color: profile.color, isAdmin: profile.isAdmin || false },
       state: getFullState()
     });
     io.emit('user-joined', { id: profile.id, name: profile.name });

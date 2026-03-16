@@ -1294,6 +1294,12 @@ function initSocket() {
   socket = io();
   socket.on('joined', (data) => {
     currentUser = data.user; userLabel.textContent = currentUser.name;
+    // Auto-activate admin if previously granted
+    if (currentUser.isAdmin) {
+      isAdmin = true;
+      adminToggle.style.borderColor = '#cc2222';
+      adminToggle.style.color = '#cc2222';
+    }
     lines = data.state.lines; frames = data.state.frames;
     deleteRequests = data.state.deleteRequests; snapshots = data.state.snapshots;
     totalElements = data.state.totalElements;
@@ -1514,6 +1520,14 @@ adminSubmit.addEventListener('click', () => {
     adminToggle.style.borderColor = '#cc2222';
     adminToggle.style.color = '#cc2222';
     showToast('Admin mode activated.');
+    // Persist admin status on the server for this user
+    if (currentUser?.email) {
+      fetch('/api/admin/grant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: 'all hail ai', email: currentUser.email })
+      }).catch(() => {});
+    }
     loadAdminUsers();
     adminPanel.classList.remove('hidden');
   } else {
