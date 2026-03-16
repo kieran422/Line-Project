@@ -957,15 +957,22 @@ body {
   display: inline-block;
   width: 48px;
   height: 48px;
-  font-size: 42px;
-  line-height: 48px;
-  text-align: center;
-  color: var(--text-dim);
   user-select: none;
   transition: transform 0.1s;
 }
 
 .survey-star-wrap:hover { transform: scale(1.1); }
+
+.survey-star-glyph {
+  position: absolute;
+  inset: 0;
+  font-size: 42px;
+  line-height: 48px;
+  text-align: center;
+  color: var(--text-dim);
+  pointer-events: none;
+  z-index: 1;
+}
 
 .survey-star-half {
   position: absolute;
@@ -973,14 +980,23 @@ body {
   height: 100%;
   width: 50%;
   cursor: pointer;
-  z-index: 2;
+  z-index: 3;
 }
 
 .survey-star-left { left: 0; }
 .survey-star-right { right: 0; }
 
-.survey-star-wrap.star-full { color: #d4a830; }
-.survey-star-wrap.star-half-filled { color: #d4a830; }
+.star-full .survey-star-glyph { color: #d4a830; }
+
+.star-half-filled {
+  overflow: hidden;
+}
+.star-half-filled .survey-star-glyph {
+  background: linear-gradient(to right, #d4a830 50%, var(--text-dim) 50%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 
 /* ── Leaderboard ──────────────────────────────────────────────────────────── */
 .leaderboard-meta {

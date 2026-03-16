@@ -1670,13 +1670,18 @@ function showSurveyStep() {
   surveyProgress.textContent = `${surveyIndex + 1} of ${surveyLines.length}`;
 
   surveyRatingBtns.innerHTML = '';
-  // 5 stars, left half = odd values (1,3,5,7,9), right half = even (2,4,6,8,10)
+  // 5 stars with left/right halves for half-star precision (maps to 1-10 internally)
   for (let s = 1; s <= 5; s++) {
     const wrap = document.createElement('span');
     wrap.className = 'survey-star-wrap';
-    wrap.textContent = '\u2606'; // empty star
     wrap.dataset.star = s;
 
+    // The visible star character (behind the click zones)
+    const glyph = document.createElement('span');
+    glyph.className = 'survey-star-glyph';
+    glyph.textContent = '\u2606';
+
+    // Invisible left half (half-star) and right half (full star) click zones
     const left = document.createElement('span');
     left.className = 'survey-star-half survey-star-left';
     left.dataset.value = s * 2 - 1;
@@ -1685,51 +1690,35 @@ function showSurveyStep() {
     right.className = 'survey-star-half survey-star-right';
     right.dataset.value = s * 2;
 
+    wrap.appendChild(glyph);
     wrap.appendChild(left);
     wrap.appendChild(right);
     surveyRatingBtns.appendChild(wrap);
   }
 
+  const glyphs = surveyRatingBtns.querySelectorAll('.survey-star-glyph');
+
   function updateStarDisplay(val) {
-    surveyRatingBtns.querySelectorAll('.survey-star-wrap').forEach((wrap, i) => {
+    glyphs.forEach((g, i) => {
       const fullVal = (i + 1) * 2;
       const halfVal = fullVal - 1;
-      wrap.classList.remove('star-full', 'star-half-filled');
+      g.parentElement.classList.remove('star-full', 'star-half-filled');
       if (val >= fullVal) {
-        wrap.textContent = '\u2605';
-        wrap.classList.add('star-full');
+        g.textContent = '\u2605';
+        g.parentElement.classList.add('star-full');
       } else if (val >= halfVal) {
-        wrap.textContent = '\u2605';
-        wrap.classList.add('star-half-filled');
-        // Use clip to show half — CSS handles the gold color
+        g.textContent = '\u2605';
+        g.parentElement.classList.add('star-half-filled');
       } else {
-        wrap.textContent = '\u2606';
+        g.textContent = '\u2606';
       }
-      // Re-append the invisible click zones
-      const l = document.createElement('span');
-      l.className = 'survey-star-half survey-star-left';
-      l.dataset.value = (i + 1) * 2 - 1;
-      const r = document.createElement('span');
-      r.className = 'survey-star-half survey-star-right';
-      r.dataset.value = (i + 1) * 2;
-      wrap.appendChild(l);
-      wrap.appendChild(r);
     });
   }
 
   function resetStars() {
-    surveyRatingBtns.querySelectorAll('.survey-star-wrap').forEach(wrap => {
-      wrap.textContent = '\u2606';
-      wrap.classList.remove('star-full', 'star-half-filled');
-      const i = parseInt(wrap.dataset.star) - 1;
-      const l = document.createElement('span');
-      l.className = 'survey-star-half survey-star-left';
-      l.dataset.value = (i + 1) * 2 - 1;
-      const r = document.createElement('span');
-      r.className = 'survey-star-half survey-star-right';
-      r.dataset.value = (i + 1) * 2;
-      wrap.appendChild(l);
-      wrap.appendChild(r);
+    glyphs.forEach(g => {
+      g.textContent = '\u2606';
+      g.parentElement.classList.remove('star-full', 'star-half-filled');
     });
   }
 
