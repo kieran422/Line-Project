@@ -1504,7 +1504,11 @@ surveyCancelBtn.addEventListener('click', () => {
   surveyModal.classList.add('hidden');
 });
 
-closeLeaderboard.addEventListener('click', () => leaderboardPanel.classList.add('hidden'));
+closeLeaderboard.addEventListener('click', () => {
+  leaderboardPanel.classList.add('hidden');
+  selectedElement = null;
+  render();
+});
 
 function renderLineScreengrab(highlightLineId) {
   const grabW = 800, grabH = Math.round(grabW * (GRID_HEIGHT_FT / GRID_WIDTH_FT));
@@ -1678,9 +1682,18 @@ function showLeaderboard(data) {
   for (const entry of data.leaderboard) {
     const div = document.createElement('div');
     div.className = 'leaderboard-item';
+    div.dataset.lineid = entry.lineId;
     const fullStars = Math.round(entry.averageScore);
     const stars = '\u2605'.repeat(fullStars) + '\u2606'.repeat(10 - fullStars);
     div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-stars">${stars}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)}</span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    div.addEventListener('click', () => {
+      // Highlight this line on the canvas
+      selectedElement = { type: 'line', id: entry.lineId };
+      // Update active state on leaderboard items
+      leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => el.classList.remove('leaderboard-active'));
+      div.classList.add('leaderboard-active');
+      render();
+    });
     leaderboardList.appendChild(div);
   }
 

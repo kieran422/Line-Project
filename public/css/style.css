@@ -985,6 +985,17 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leaderboard-item:hover {
+  border-color: var(--silver);
+}
+
+.leaderboard-active {
+  border-color: var(--silver-bright);
+  background: var(--border);
 }
 
 .leaderboard-rank {
