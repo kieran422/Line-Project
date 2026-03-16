@@ -61,6 +61,7 @@ let hoveredElement = null;
 let isDragging = false;
 let dragTarget = null;
 let hoverInsertPoint = null;
+let hoveredPointIndex = -1;           // index of hovered attachment point on selected line
 
 // Timeline
 let viewingSnapshot = null;
@@ -487,6 +488,15 @@ function drawSelectedHandles(dl) {
           ctx.beginPath();
           ctx.moveTo(p.x - 2, p.y); ctx.lineTo(p.x + 2, p.y);
           ctx.stroke();
+        } else if (i === hoveredPointIndex) {
+          // Hovered point — highlighted, shows it can be deleted
+          ctx.fillStyle = '#222222';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
         } else {
           // Normal editable point
           ctx.fillStyle = '#111111';
@@ -687,6 +697,38 @@ function initInput() {
   canvas.addEventListener('mouseup', onMouseUp);
   canvas.addEventListener('click', onClick);
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Delete attachment point with Delete or Backspace key
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    // Don't intercept if typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (activeTool !== 'line' || !selectedElement || selectedElement.type !== 'line') return;
+    if (hoveredPointIndex < 0) return;
+
+    const line = lines.find(l => l.id === selectedElement.id);
+    if (!line) return;
+
+    // Must keep at least 2 points (start and end)
+    if (line.points.length <= 2) {
+      showToast('Cannot delete — a line needs at least 2 points.');
+      return;
+    }
+
+    // Don't allow deleting endpoints on someone else's line
+    const isOthers = !isAdmin && line.authorId !== currentUser?.id;
+    if (isOthers && (hoveredPointIndex === 0 || hoveredPointIndex === line.points.length - 1)) {
+      showToast('Cannot delete another user\'s start or end point.');
+      return;
+    }
+
+    e.preventDefault();
+    line.points.splice(hoveredPointIndex, 1);
+    hoveredPointIndex = -1;
+    socket.emit('edit-line', { id: line.id, points: line.points });
+    render();
+  });
 }
 
 function onMouseMove(e) {
@@ -731,6 +773,7 @@ function onMouseMove(e) {
   }
 
   hoverInsertPoint = null;
+  hoveredPointIndex = -1;
   const notPlacing = !isPlacingLine;
   const isLineTool = activeTool === 'line';
   const isFrameTool = activeTool === 'small-frame' || activeTool === 'large-frame';
@@ -740,7 +783,9 @@ function onMouseMove(e) {
     const selLine = lines.find(l => l.id === selectedElement.id);
     if (selLine) {
       const isOthers = !isAdmin && selLine.authorId !== currentUser?.id;
-      if (hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers) >= 0) {
+      const ptIdx = hitTestAttachPt(gp.x, gp.y, selLine, true, isOthers);
+      if (ptIdx >= 0) {
+        hoveredPointIndex = ptIdx;
         canvas.style.cursor = 'grab';
         hoveredElement = { type: 'line', id: selLine.id, element: selLine };
         hideTooltip(); render(); return;
