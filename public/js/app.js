@@ -394,15 +394,18 @@ function isLineVisible(pts) {
   return false;
 }
 
-function drawLines(dl) {
+function drawLines(dl, opts) {
+  // opts: { dimExcept: lineId, dimAlpha: 0.15 }
   for (const line of dl) {
     if (line.points.length < 2) continue;
-    if (!isLineVisible(line.points)) continue;
+    if (!opts && !isLineVisible(line.points)) continue;
     const curve = computeLineCurve(line.points);
     const hovered = hoveredElement?.type === 'line' && hoveredElement.id === line.id;
     const sel = isSelected('line', line.id);
+    const isDimmed = opts?.dimExcept && line.id !== opts.dimExcept;
 
     ctx.save();
+    if (isDimmed) ctx.globalAlpha = opts.dimAlpha || 0.15;
     ctx.shadowColor = LED_GLOW;
     ctx.shadowBlur = (hovered || sel) ? 10 : 6;
     ctx.strokeStyle = LED_COLOR;
@@ -1466,6 +1469,198 @@ function exportPDF() {
 
 const pdfBtn = document.getElementById('pdf-download');
 pdfBtn.addEventListener('click', exportPDF);
+
+// ── Survey & Leaderboard ─────────────────────────────────────────────────────
+
+let surveyActive = false;
+let surveyLines = [];
+let surveyIndex = 0;
+let surveyRatings = [];
+
+const leaderboardToggle = document.getElementById('leaderboard-toggle');
+const surveyModal = document.getElementById('survey-modal');
+const surveyImage = document.getElementById('survey-line-image');
+const surveyInfo = document.getElementById('survey-line-info');
+const surveyProgress = document.getElementById('survey-progress');
+const surveyRatingBtns = document.getElementById('survey-rating-buttons');
+const surveyCancelBtn = document.getElementById('survey-cancel');
+const leaderboardPanel = document.getElementById('leaderboard-panel');
+const leaderboardList = document.getElementById('leaderboard-list');
+const leaderboardRaterCount = document.getElementById('leaderboard-rater-count');
+const closeLeaderboard = document.getElementById('close-leaderboard');
+const leaderboardRetake = document.getElementById('leaderboard-retake');
+
+leaderboardToggle.addEventListener('click', () => {
+  if (!isAdmin) {
+    // Show admin modal
+    adminModal.classList.remove('hidden');
+    adminPasswordInput.value = '';
+    adminPasswordInput.focus();
+    return;
+  }
+  startSurvey();
+});
+
+surveyCancelBtn.addEventListener('click', () => {
+  surveyActive = false;
+  surveyModal.classList.add('hidden');
+});
+
+closeLeaderboard.addEventListener('click', () => leaderboardPanel.classList.add('hidden'));
+leaderboardRetake.addEventListener('click', () => {
+  leaderboardPanel.classList.add('hidden');
+  startSurvey();
+});
+
+function renderLineScreengrab(highlightLineId) {
+  const grabW = 800, grabH = Math.round(grabW * (GRID_HEIGHT_FT / GRID_WIDTH_FT));
+  const offscreen = document.createElement('canvas');
+  offscreen.width = grabW;
+  offscreen.height = grabH;
+  const oc = offscreen.getContext('2d');
+
+  const savedCtx = ctx, savedCanvas = canvas;
+  const savedBaseScale = baseScale, savedZoom = zoomLevel;
+  const savedVCX = viewCenterX, savedVCY = viewCenterY;
+  const savedHover = hoveredElement, savedSel = selectedElement;
+
+  canvas = offscreen;
+  ctx = oc;
+  baseScale = (grabW - 20) / GRID_WIDTH_FT;
+  zoomLevel = 1;
+  viewCenterX = GRID_WIDTH_FT / 2;
+  viewCenterY = GRID_HEIGHT_FT / 2;
+  hoveredElement = null;
+  selectedElement = null;
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, grabW, grabH);
+
+  drawGrid();
+  drawLines(lines, { dimExcept: highlightLineId, dimAlpha: 0.12 });
+  drawFrames(frames, lines);
+
+  // Draw the highlighted line again on top with extra glow
+  const hl = lines.find(l => l.id === highlightLineId);
+  if (hl && hl.points.length >= 2) {
+    const curve = computeLineCurve(hl.points);
+    ctx.save();
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 16;
+    ctx.strokeStyle = LED_COLOR;
+    ctx.lineWidth = LED_LINE_WIDTH * 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < curve.length; i++) {
+      const p = gridToCanvas(curve[i].x, curve[i].y);
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 4;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const dataUrl = offscreen.toDataURL('image/jpeg', 0.85);
+
+  canvas = savedCanvas;
+  ctx = savedCtx;
+  baseScale = savedBaseScale;
+  zoomLevel = savedZoom;
+  viewCenterX = savedVCX;
+  viewCenterY = savedVCY;
+  hoveredElement = savedHover;
+  selectedElement = savedSel;
+
+  return dataUrl;
+}
+
+function startSurvey() {
+  surveyLines = lines.filter(l => l.points.length >= 2);
+  if (surveyLines.length === 0) { showToast('No lines to rate.'); return; }
+  surveyIndex = 0;
+  surveyRatings = [];
+  surveyActive = true;
+  showSurveyStep();
+}
+
+function showSurveyStep() {
+  const line = surveyLines[surveyIndex];
+  const imgUrl = renderLineScreengrab(line.id);
+
+  surveyImage.src = imgUrl;
+  surveyInfo.textContent = `Line by ${line.authorName}`;
+  surveyProgress.textContent = `${surveyIndex + 1} of ${surveyLines.length}`;
+
+  surveyRatingBtns.innerHTML = '';
+  for (let i = 1; i <= 10; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'survey-rating-btn';
+    btn.textContent = i;
+    btn.addEventListener('click', () => rateLine(i));
+    surveyRatingBtns.appendChild(btn);
+  }
+
+  surveyModal.classList.remove('hidden');
+}
+
+function rateLine(score) {
+  const line = surveyLines[surveyIndex];
+  surveyRatings.push({ lineId: line.id, score });
+  surveyIndex++;
+
+  if (surveyIndex >= surveyLines.length) {
+    submitSurvey();
+  } else {
+    showSurveyStep();
+  }
+}
+
+function submitSurvey() {
+  surveyModal.classList.add('hidden');
+  surveyActive = false;
+  showToast('Submitting ratings...');
+
+  fetch('/api/admin/submit-ratings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: 'all hail ai', email: currentUser.email, ratings: surveyRatings })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) loadLeaderboard();
+    else showToast('Error submitting ratings.');
+  })
+  .catch(() => showToast('Error submitting ratings.'));
+}
+
+function loadLeaderboard() {
+  fetch('/api/admin/leaderboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: 'all hail ai' })
+  })
+  .then(r => r.json())
+  .then(data => showLeaderboard(data))
+  .catch(() => showToast('Error loading leaderboard.'));
+}
+
+function showLeaderboard(data) {
+  leaderboardList.innerHTML = '';
+  leaderboardRaterCount.textContent = `${data.totalRaters} rater${data.totalRaters !== 1 ? 's' : ''}`;
+
+  for (const entry of data.leaderboard) {
+    const div = document.createElement('div');
+    div.className = 'leaderboard-item';
+    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)}</span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    leaderboardList.appendChild(div);
+  }
+
+  leaderboardPanel.classList.remove('hidden');
+}
 
 // ── Notification Sound ───────────────────────────────────────────────────────
 

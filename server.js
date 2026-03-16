@@ -97,6 +97,68 @@ app.post('/api/admin/delete-user', (req, res) => {
   return res.json({ ok: true, deleted: deletedIds.length });
 });
 
+// Submit survey ratings
+app.post('/api/admin/submit-ratings', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+  const email = (req.body.email || '').toLowerCase().trim();
+  const profile = profiles.get(email);
+  if (!profile) return res.status(404).json({ error: 'user not found' });
+
+  const submittedRatings = req.body.ratings || [];
+  for (const r of submittedRatings) {
+    const line = lines.get(r.lineId);
+    if (!line) continue;
+    const key = profile.id + ':' + r.lineId;
+    ratings.set(key, {
+      raterId: profile.id,
+      raterName: profile.name,
+      lineId: r.lineId,
+      lineAuthorId: line.authorId,
+      lineAuthorName: line.authorName,
+      score: Math.max(1, Math.min(10, Math.round(r.score))),
+      timestamp: Date.now()
+    });
+  }
+  saveState();
+  return res.json({ ok: true });
+});
+
+// Get leaderboard
+app.post('/api/admin/leaderboard', (req, res) => {
+  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+
+  // Aggregate ratings per line
+  const lineScores = new Map(); // lineId → { scores: [], authorName, authorId }
+  for (const r of ratings.values()) {
+    if (!lines.has(r.lineId)) continue; // skip ratings for deleted lines
+    if (!lineScores.has(r.lineId)) {
+      lineScores.set(r.lineId, { scores: [], authorName: r.lineAuthorName, authorId: r.lineAuthorId });
+    }
+    lineScores.get(r.lineId).scores.push(r.score);
+  }
+
+  // Compute averages and rank
+  const leaderboard = [];
+  for (const [lineId, data] of lineScores.entries()) {
+    const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    leaderboard.push({
+      lineId,
+      authorName: data.authorName,
+      authorId: data.authorId,
+      averageScore: avg,
+      totalRatings: data.scores.length
+    });
+  }
+  leaderboard.sort((a, b) => b.averageScore - a.averageScore);
+  leaderboard.forEach((e, i) => e.rank = i + 1);
+
+  // Count unique raters
+  const raterIds = new Set();
+  for (const r of ratings.values()) raterIds.add(r.raterId);
+
+  return res.json({ leaderboard, totalRaters: raterIds.size });
+});
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -143,6 +205,12 @@ const frames = new Map();
 for (const f of savedState.frames) frames.set(f.id, f);
 
 const deleteRequests = new Map();
+
+// Ratings: key "raterId:lineId" → { raterId, raterName, lineId, lineAuthorId, lineAuthorName, score, timestamp }
+const ratings = new Map();
+for (const r of (savedState.ratings || [])) {
+  ratings.set(r.raterId + ':' + r.lineId, r);
+}
 for (const r of savedState.deleteRequests) deleteRequests.set(r.id, r);
 
 const snapshots = savedState.snapshots || [];
@@ -180,7 +248,8 @@ function saveState() {
     snapshots,
     totalElements,
     lastEditorId,
-    lastEditorName
+    lastEditorName,
+    ratings: Array.from(ratings.values())
   });
 }
 

@@ -80,6 +80,10 @@
         </div>
       </div>
       <div class="top-right">
+        <button id="leaderboard-toggle" class="tool-action-btn" title="Leaderboard">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="14" width="4" height="8"/><rect x="10" y="6" width="4" height="16"/><rect x="16" y="10" width="4" height="12"/></svg>
+          <span>Rank</span>
+        </button>
         <button id="admin-toggle" class="tool-action-btn" title="Admin">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
           <span>Admin</span>
@@ -140,6 +144,31 @@
         <button id="close-notifications" class="close-btn">&times;</button>
       </div>
       <div id="notifications-list" class="panel-body"></div>
+    </aside>
+
+    <!-- SURVEY MODAL -->
+    <div id="survey-modal" class="modal-overlay hidden">
+      <div class="modal-box survey-box">
+        <h3>Rate This Line</h3>
+        <p id="survey-progress" class="survey-progress">1 of 5</p>
+        <img id="survey-line-image" class="survey-image" alt="Line preview" />
+        <p id="survey-line-info" class="survey-line-info">Line by Author</p>
+        <div id="survey-rating-buttons" class="survey-rating-grid"></div>
+        <button id="survey-cancel" class="cancel-btn">Cancel</button>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD PANEL -->
+    <aside id="leaderboard-panel" class="panel hidden">
+      <div class="panel-header">
+        <h3>Leaderboard</h3>
+        <button id="close-leaderboard" class="close-btn">&times;</button>
+      </div>
+      <div class="panel-body">
+        <p id="leaderboard-rater-count" class="leaderboard-meta">0 raters</p>
+        <div id="leaderboard-list"></div>
+        <button id="leaderboard-retake" class="commit-btn" style="margin-top:16px;width:100%">Retake Survey</button>
+      </div>
     </aside>
 
     <!-- ADMIN PASSWORD MODAL -->

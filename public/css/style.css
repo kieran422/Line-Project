@@ -916,6 +916,115 @@ body {
   color: white;
 }
 
+/* ── Survey Modal ─────────────────────────────────────────────────────────── */
+.survey-box {
+  min-width: 500px;
+  max-width: 90vw;
+}
+
+.survey-progress {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.survey-image {
+  width: 100%;
+  max-width: 700px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin-bottom: 12px;
+}
+
+.survey-line-info {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--silver);
+  margin-bottom: 20px;
+  letter-spacing: 1px;
+}
+
+.survey-rating-grid {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.survey-rating-btn {
+  font-family: var(--font-display);
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.survey-rating-btn:hover {
+  background: var(--silver);
+  color: var(--bg);
+  border-color: var(--silver);
+}
+
+/* ── Leaderboard ──────────────────────────────────────────────────────────── */
+.leaderboard-meta {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+.leaderboard-item {
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.leaderboard-rank {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--silver-bright);
+  min-width: 32px;
+}
+
+.leaderboard-author {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: var(--silver);
+  flex: 1;
+}
+
+.leaderboard-score {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--silver-bright);
+}
+
+.leaderboard-votes {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 50px;
+  text-align: right;
+}
+
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
