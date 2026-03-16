@@ -949,54 +949,37 @@ body {
   display: flex;
   gap: 0;
   justify-content: center;
+  align-items: center;
   margin-bottom: 16px;
+  cursor: pointer;
 }
 
-.survey-star-wrap {
-  position: relative;
+.survey-star-seg {
   display: inline-block;
-  width: 48px;
+  width: 22px;
   height: 48px;
+  overflow: hidden;
+  position: relative;
   user-select: none;
-  transition: transform 0.1s;
 }
 
-.survey-star-wrap:hover { transform: scale(1.1); }
-
-.survey-star-glyph {
-  position: absolute;
-  inset: 0;
+.survey-star-seg span {
+  display: block;
   font-size: 42px;
   line-height: 48px;
+  width: 44px;
   text-align: center;
   color: var(--text-dim);
+  transition: color 0.1s;
   pointer-events: none;
-  z-index: 1;
 }
 
-.survey-star-half {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: 50%;
-  cursor: pointer;
-  z-index: 3;
-}
+/* Left halves show the left side of the star */
+.survey-star-seg.seg-left span { position: relative; left: 0; }
+/* Right halves show the right side */
+.survey-star-seg.seg-right span { position: relative; left: -22px; }
 
-.survey-star-left { left: 0; }
-.survey-star-right { right: 0; }
-
-.star-full .survey-star-glyph { color: #d4a830; }
-
-.star-half-filled {
-  overflow: hidden;
-}
-.star-half-filled .survey-star-glyph {
-  background: linear-gradient(to right, #d4a830 50%, var(--text-dim) 50%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+.survey-star-seg.seg-lit span { color: #d4a830; }
 
 /* ── Leaderboard ──────────────────────────────────────────────────────────── */
 .leaderboard-meta {

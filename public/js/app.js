@@ -1670,67 +1670,52 @@ function showSurveyStep() {
   surveyProgress.textContent = `${surveyIndex + 1} of ${surveyLines.length}`;
 
   surveyRatingBtns.innerHTML = '';
-  // 5 stars with left/right halves for half-star precision (maps to 1-10 internally)
+  // 10 segments: each star split into left half (odd) and right half (even)
+  // Clicking any segment immediately rates and moves to next line
   for (let s = 1; s <= 5; s++) {
-    const wrap = document.createElement('span');
-    wrap.className = 'survey-star-wrap';
-    wrap.dataset.star = s;
-
-    // The visible star character (behind the click zones)
-    const glyph = document.createElement('span');
-    glyph.className = 'survey-star-glyph';
-    glyph.textContent = '\u2606';
-
-    // Invisible left half (half-star) and right half (full star) click zones
-    const left = document.createElement('span');
-    left.className = 'survey-star-half survey-star-left';
+    // Left half = value s*2-1 (1,3,5,7,9)
+    const left = document.createElement('div');
+    left.className = 'survey-star-seg seg-left';
     left.dataset.value = s * 2 - 1;
+    const lSpan = document.createElement('span');
+    lSpan.textContent = '\u2606';
+    left.appendChild(lSpan);
 
-    const right = document.createElement('span');
-    right.className = 'survey-star-half survey-star-right';
+    // Right half = value s*2 (2,4,6,8,10)
+    const right = document.createElement('div');
+    right.className = 'survey-star-seg seg-right';
     right.dataset.value = s * 2;
+    const rSpan = document.createElement('span');
+    rSpan.textContent = '\u2606';
+    right.appendChild(rSpan);
 
-    wrap.appendChild(glyph);
-    wrap.appendChild(left);
-    wrap.appendChild(right);
-    surveyRatingBtns.appendChild(wrap);
+    surveyRatingBtns.appendChild(left);
+    surveyRatingBtns.appendChild(right);
   }
 
-  const glyphs = surveyRatingBtns.querySelectorAll('.survey-star-glyph');
+  const segs = surveyRatingBtns.querySelectorAll('.survey-star-seg');
 
-  function updateStarDisplay(val) {
-    glyphs.forEach((g, i) => {
-      const fullVal = (i + 1) * 2;
-      const halfVal = fullVal - 1;
-      g.parentElement.classList.remove('star-full', 'star-half-filled');
-      if (val >= fullVal) {
-        g.textContent = '\u2605';
-        g.parentElement.classList.add('star-full');
-      } else if (val >= halfVal) {
-        g.textContent = '\u2605';
-        g.parentElement.classList.add('star-half-filled');
-      } else {
-        g.textContent = '\u2606';
-      }
+  function lightUpTo(val) {
+    segs.forEach(seg => {
+      const v = parseInt(seg.dataset.value);
+      const lit = v <= val;
+      seg.classList.toggle('seg-lit', lit);
+      seg.querySelector('span').textContent = lit ? '\u2605' : '\u2606';
     });
   }
 
-  function resetStars() {
-    glyphs.forEach(g => {
-      g.textContent = '\u2606';
-      g.parentElement.classList.remove('star-full', 'star-half-filled');
+  function resetAll() {
+    segs.forEach(seg => {
+      seg.classList.remove('seg-lit');
+      seg.querySelector('span').textContent = '\u2606';
     });
   }
 
-  surveyRatingBtns.addEventListener('mouseover', (e) => {
-    const half = e.target.closest('.survey-star-half');
-    if (half) updateStarDisplay(parseInt(half.dataset.value));
+  segs.forEach(seg => {
+    seg.addEventListener('mouseenter', () => lightUpTo(parseInt(seg.dataset.value)));
+    seg.addEventListener('click', () => rateLine(parseInt(seg.dataset.value)));
   });
-  surveyRatingBtns.addEventListener('mouseleave', resetStars);
-  surveyRatingBtns.addEventListener('click', (e) => {
-    const half = e.target.closest('.survey-star-half');
-    if (half) rateLine(parseInt(half.dataset.value));
-  });
+  surveyRatingBtns.addEventListener('mouseleave', resetAll);
 
   surveyModal.classList.remove('hidden');
 }
