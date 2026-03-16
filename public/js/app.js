@@ -1548,12 +1548,6 @@ const leaderboardRaterCount = document.getElementById('leaderboard-rater-count')
 const closeLeaderboard = document.getElementById('close-leaderboard');
 
 leaderboardToggle.addEventListener('click', () => {
-  if (!isAdmin) {
-    adminModal.classList.remove('hidden');
-    adminPasswordInput.value = '';
-    adminPasswordInput.focus();
-    return;
-  }
   checkAndStartSurvey();
 });
 
@@ -1637,10 +1631,10 @@ function renderLineScreengrab(highlightLineId) {
 
 function checkAndStartSurvey() {
   // Ask server which lines this user hasn't rated yet
-  fetch('/api/admin/unrated', {
+  fetch('/api/ratings/unrated', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode: 'all hail ai', email: currentUser.email })
+    body: JSON.stringify({ email: currentUser.email })
   })
   .then(r => r.json())
   .then(data => {
@@ -1737,10 +1731,10 @@ function submitSurvey() {
   surveyActive = false;
   showToast('Submitting ratings...');
 
-  fetch('/api/admin/submit-ratings', {
+  fetch('/api/ratings/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode: 'all hail ai', email: currentUser.email, ratings: surveyRatings })
+    body: JSON.stringify({ email: currentUser.email, ratings: surveyRatings })
   })
   .then(r => r.json())
   .then(data => {
@@ -1751,10 +1745,10 @@ function submitSurvey() {
 }
 
 function loadLeaderboard() {
-  fetch('/api/admin/leaderboard', {
+  fetch('/api/ratings/leaderboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode: 'all hail ai' })
+    body: JSON.stringify({})
   })
   .then(r => r.json())
   .then(data => showLeaderboard(data))

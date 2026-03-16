@@ -98,8 +98,7 @@ app.post('/api/admin/delete-user', (req, res) => {
 });
 
 // Submit survey ratings
-app.post('/api/admin/submit-ratings', (req, res) => {
-  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+app.post('/api/ratings/submit', (req, res) => {
   const email = (req.body.email || '').toLowerCase().trim();
   const profile = profiles.get(email);
   if (!profile) return res.status(404).json({ error: 'user not found' });
@@ -124,8 +123,7 @@ app.post('/api/admin/submit-ratings', (req, res) => {
 });
 
 // Get unrated lines for a user
-app.post('/api/admin/unrated', (req, res) => {
-  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+app.post('/api/ratings/unrated', (req, res) => {
   const email = (req.body.email || '').toLowerCase().trim();
   const profile = profiles.get(email);
   if (!profile) return res.status(404).json({ error: 'user not found' });
@@ -140,8 +138,7 @@ app.post('/api/admin/unrated', (req, res) => {
 });
 
 // Get leaderboard
-app.post('/api/admin/leaderboard', (req, res) => {
-  if (req.body.passcode !== 'all hail ai') return res.status(403).json({ error: 'invalid' });
+app.post('/api/ratings/leaderboard', (req, res) => {
 
   // Aggregate ratings per line
   const lineScores = new Map(); // lineId → { scores: [], authorName, authorId }
