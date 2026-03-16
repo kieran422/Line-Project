@@ -1054,36 +1054,75 @@ body {
 .leaderboard-item-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
+  padding: 2px 0;
 }
 
-.leaderboard-votes-detail {
-  margin-top: 8px;
-  padding-top: 8px;
+.leaderboard-chevron {
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.leaderboard-open .leaderboard-chevron {
+  transform: rotate(180deg);
+}
+
+.leaderboard-dropdown {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease, padding 0.25s ease;
+  padding: 0;
+}
+
+.leaderboard-open .leaderboard-dropdown {
+  max-height: 300px;
+  padding-top: 10px;
+}
+
+.votes-table {
   border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
-.leaderboard-vote-row {
+.votes-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
-  padding-left: 32px;
+  padding: 5px 8px 5px 34px;
+  gap: 8px;
 }
 
-.vote-rater {
+.votes-row:nth-child(even) {
+  background: rgba(255,255,255,0.02);
+  border-radius: 2px;
+}
+
+.votes-name {
   font-family: var(--font-body);
   font-size: 12px;
   color: var(--text-dim);
-  font-style: italic;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.vote-score {
+.votes-stars {
+  font-size: 11px;
+  color: var(--silver);
+  white-space: nowrap;
+  letter-spacing: 1px;
+}
+
+.votes-num {
   font-family: var(--font-display);
   font-size: 12px;
-  color: var(--silver);
-  letter-spacing: 1px;
+  color: var(--silver-bright);
+  min-width: 24px;
+  text-align: right;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */

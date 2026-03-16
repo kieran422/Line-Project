@@ -1767,31 +1767,53 @@ function showLeaderboard(data) {
 
     const header = document.createElement('div');
     header.className = 'leaderboard-item-header';
-    header.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${outOf5} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    header.innerHTML = `
+      <span class="leaderboard-rank">#${entry.rank}</span>
+      <span class="leaderboard-author">${entry.authorName}</span>
+      <span class="leaderboard-score">${outOf5}<span class="leaderboard-star">\u2605</span></span>
+      <span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>
+      <span class="leaderboard-chevron">\u25BE</span>`;
 
-    const votesDiv = document.createElement('div');
-    votesDiv.className = 'leaderboard-votes-detail hidden';
+    const dropdown = document.createElement('div');
+    dropdown.className = 'leaderboard-dropdown';
+
     if (entry.votes && entry.votes.length > 0) {
+      const table = document.createElement('div');
+      table.className = 'votes-table';
       for (const v of entry.votes) {
-        const vRow = document.createElement('div');
-        vRow.className = 'leaderboard-vote-row';
+        const row = document.createElement('div');
+        row.className = 'votes-row';
         const vScore = (v.score / 2).toFixed(1);
-        vRow.innerHTML = `<span class="vote-rater">${v.raterName}</span><span class="vote-score">${vScore} \u2605</span>`;
-        votesDiv.appendChild(vRow);
+        const fullStars = Math.floor(v.score / 2);
+        const halfStar = v.score % 2 === 1;
+        const stars = '\u2605'.repeat(fullStars) + (halfStar ? '\u00BD' : '') ;
+        row.innerHTML = `<span class="votes-name">${v.raterName}</span><span class="votes-stars">${stars}</span><span class="votes-num">${vScore}</span>`;
+        table.appendChild(row);
       }
+      dropdown.appendChild(table);
     }
 
     div.appendChild(header);
-    div.appendChild(votesDiv);
+    div.appendChild(dropdown);
 
     header.addEventListener('click', () => {
-      // Toggle vote details
-      votesDiv.classList.toggle('hidden');
+      // Close other open dropdowns
+      leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => {
+        if (el !== div) {
+          el.classList.remove('leaderboard-active', 'leaderboard-open');
+        }
+      });
+      // Toggle this one
+      div.classList.toggle('leaderboard-open');
+      div.classList.toggle('leaderboard-active');
       // Highlight line on canvas
-      selectedElement = { type: 'line', id: entry.lineId };
-      leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
-      leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => el.classList.remove('leaderboard-active'));
-      div.classList.add('leaderboard-active');
+      if (div.classList.contains('leaderboard-open')) {
+        selectedElement = { type: 'line', id: entry.lineId };
+        leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
+      } else {
+        selectedElement = null;
+        leaderboardHighlight = null;
+      }
       render();
     });
     leaderboardList.appendChild(div);
