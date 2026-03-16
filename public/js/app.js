@@ -1327,6 +1327,12 @@ function initSocket() {
     });
     renderNotifications();
   });
+  socket.on('user-joined', (data) => {
+    if (!isAdmin) return;
+    if (data.id === currentUser?.id) return; // don't notify about yourself
+    playNotifSound();
+    showToast(`${data.name} joined.`);
+  });
   socket.on('snapshot-added', (s) => {
     const wasAtCurrent = viewingSnapshot === null;
     snapshots.push(s);
@@ -1454,6 +1460,27 @@ function exportPDF() {
 
 const pdfBtn = document.getElementById('pdf-download');
 pdfBtn.addEventListener('click', exportPDF);
+
+// ── Notification Sound ───────────────────────────────────────────────────────
+
+function playNotifSound() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    // Two-tone chime
+    [660, 880].forEach((freq, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, ac.currentTime + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + i * 0.12 + 0.4);
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.start(ac.currentTime + i * 0.12);
+      osc.stop(ac.currentTime + i * 0.12 + 0.4);
+    });
+  } catch (e) {}
+}
 
 // ── Admin Panel ──────────────────────────────────────────────────────────────
 

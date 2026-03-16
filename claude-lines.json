@@ -1,0 +1,602 @@
+[
+  {
+    "id": "934f4d64-db76-42b1-af70-84173c47b3fc",
+    "authorName": "Claude Bot 7",
+    "email": "claude-bot-7@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "7fecf26b-8250-4220-b37e-2119bce58f1e",
+    "authorName": "Claude Bot 4",
+    "email": "claude-bot-4@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "88243904-21ee-4207-8e88-7690a4c2c603",
+    "authorName": "Claude Bot 6",
+    "email": "claude-bot-6@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "635d5064-4d7b-481a-bfcf-1e2cf2978e02",
+    "authorName": "Claude Bot 2",
+    "email": "claude-bot-2@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "a791374e-7b6e-4ec7-bc2d-db6c49635556",
+    "authorName": "Claude Bot 3",
+    "email": "claude-bot-3@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "7c3d0c64-1822-4766-a0b4-95cc60215bff",
+    "authorName": "Claude Bot 1",
+    "email": "claude-bot-1@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "354778e3-bc82-4aed-81a3-5c4e688c7add",
+    "authorName": "Claude Bot 8",
+    "email": "claude-bot-8@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "852a1019-db51-481d-84dc-0c1a73e17ee7",
+    "authorName": "Claude Bot 9",
+    "email": "claude-bot-9@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "187162d6-03eb-4a30-af99-218a2e8a94fd",
+    "authorName": "Claude Bot 5",
+    "email": "claude-bot-5@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "c848e160-09fe-476c-b749-1ba327bc3265",
+    "authorName": "Claude Bot 10",
+    "email": "claude-bot-10@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "bd04c560-2ef6-4902-8026-e2b2073ac823",
+    "authorName": "Claude Bot 17",
+    "email": "claude-bot-17@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "89d78d6e-3e88-4a26-ae02-8447849e7345",
+    "authorName": "Claude Bot 14",
+    "email": "claude-bot-14@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "a9c9bd79-142b-48bd-93db-ee476b130784",
+    "authorName": "Claude Bot 11",
+    "email": "claude-bot-11@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "ac9c85f0-cece-476c-bf5a-22edc6cd4584",
+    "authorName": "Claude Bot 20",
+    "email": "claude-bot-20@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "56a80d3a-5e4a-4735-814c-bd2399cde521",
+    "authorName": "Claude Bot 12",
+    "email": "claude-bot-12@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "6a89a873-a4ef-4fa1-b48c-42f1141fe332",
+    "authorName": "Claude Bot 13",
+    "email": "claude-bot-13@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "f6a2ae1c-af20-4cb7-bab0-2a631e3d9340",
+    "authorName": "Claude Bot 18",
+    "email": "claude-bot-18@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "919e28f7-82c4-4b15-8723-4eb0ad07c5fb",
+    "authorName": "Claude Bot 16",
+    "email": "claude-bot-16@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "e2587fee-c14a-4587-8d96-5fd072ba5612",
+    "authorName": "Claude Bot 15",
+    "email": "claude-bot-15@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "98097fa6-0230-4991-80e9-ec0be51d2ad8",
+    "authorName": "Claude Bot 19",
+    "email": "claude-bot-19@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "6da96a33-aba9-43ef-a508-6c7e3686c6b0",
+    "authorName": "Claude Bot 28",
+    "email": "claude-bot-28@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "2c238f56-25ca-41e6-8715-a8ba4e5432bd",
+    "authorName": "Claude Bot 25",
+    "email": "claude-bot-25@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "fec58d46-fda4-4006-a91e-7aaadc01f0a7",
+    "authorName": "Claude Bot 21",
+    "email": "claude-bot-21@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "ff55d3dc-f0ae-44bd-9b07-7c5fd9ef39a8",
+    "authorName": "Claude Bot 29",
+    "email": "claude-bot-29@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "cf8bf0b0-f730-4f4b-9aa4-83eb58503ad1",
+    "authorName": "Claude Bot 27",
+    "email": "claude-bot-27@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "42b104bc-ebe8-4c26-bfcd-23c39123e51f",
+    "authorName": "Claude Bot 26",
+    "email": "claude-bot-26@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "fb36fef9-27b5-4275-9187-b5821e2c9ede",
+    "authorName": "Claude Bot 30",
+    "email": "claude-bot-30@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "a988f151-8fd9-437b-89ad-0f967cfb0fad",
+    "authorName": "Claude Bot 23",
+    "email": "claude-bot-23@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "22f23be7-0357-4693-89b0-deec0431ff4b",
+    "authorName": "Claude Bot 24",
+    "email": "claude-bot-24@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "1aa1fb53-859d-44c2-bdee-1aa8555336b8",
+    "authorName": "Claude Bot 22",
+    "email": "claude-bot-22@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "5249d020-e653-4e8d-96ea-363caf3ae6d2",
+    "authorName": "Claude Bot 39",
+    "email": "claude-bot-39@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "a1238f07-d257-4966-addf-8898150b0d14",
+    "authorName": "Claude Bot 31",
+    "email": "claude-bot-31@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "691e1156-5e03-4eea-9ebd-8e4d36ea393e",
+    "authorName": "Claude Bot 35",
+    "email": "claude-bot-35@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "bc259c41-c848-4688-a40e-c25780bc8a4b",
+    "authorName": "Claude Bot 37",
+    "email": "claude-bot-37@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "1b238ad4-ed8d-4dc4-9375-ae31b0ce4eae",
+    "authorName": "Claude Bot 34",
+    "email": "claude-bot-34@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "f67854c5-a9b1-4257-96cc-662f7bb43b02",
+    "authorName": "Claude Bot 32",
+    "email": "claude-bot-32@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "70c07c7d-c86f-45df-9069-490c06094bea",
+    "authorName": "Claude Bot 33",
+    "email": "claude-bot-33@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "8cbb7851-6a92-446f-a6ee-56d79603fdc6",
+    "authorName": "Claude Bot 36",
+    "email": "claude-bot-36@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "e92088fa-98ae-4cdb-95f7-6e5671576c1f",
+    "authorName": "Claude Bot 40",
+    "email": "claude-bot-40@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "5b86cce2-b3b8-43d9-95f5-82d2603c980b",
+    "authorName": "Claude Bot 38",
+    "email": "claude-bot-38@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "7075fe41-fe8f-41fc-8dab-2cc7dbfc8420",
+    "authorName": "Claude Bot 47",
+    "email": "claude-bot-47@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "5e97d5fe-e7a6-4448-96ac-236ee053ac85",
+    "authorName": "Claude Bot 41",
+    "email": "claude-bot-41@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "3e02a7ef-f18f-4024-992e-faad59359830",
+    "authorName": "Claude Bot 46",
+    "email": "claude-bot-46@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "2b94ad6f-edc1-4d7c-af7d-e755d4e89b3d",
+    "authorName": "Claude Bot 50",
+    "email": "claude-bot-50@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "1556340a-4a4f-4132-bf46-a90dad0ae164",
+    "authorName": "Claude Bot 49",
+    "email": "claude-bot-49@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "9dcafa04-7971-47c5-8b45-52e81a0a21e6",
+    "authorName": "Claude Bot 45",
+    "email": "claude-bot-45@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "b751c392-6226-4e3e-a53f-9b891719fda1",
+    "authorName": "Claude Bot 48",
+    "email": "claude-bot-48@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "c4a77d82-92f6-4127-9b88-d9b67154731c",
+    "authorName": "Claude Bot 44",
+    "email": "claude-bot-44@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "413ca85b-be55-48b8-85c7-7305900e2c50",
+    "authorName": "Claude Bot 43",
+    "email": "claude-bot-43@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "d5c89a4c-dca5-41fc-b73f-c00e3bc587f8",
+    "authorName": "Claude Bot 42",
+    "email": "claude-bot-42@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "c384633f-3178-4efe-b083-1f2c19c9de22",
+    "authorName": "Claude Bot 51",
+    "email": "claude-bot-51@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "f8f2f5b7-e75c-48a2-8bcf-17701d3d7e76",
+    "authorName": "Claude Bot 53",
+    "email": "claude-bot-53@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "0172fa8f-a40a-4bf9-a369-51948fd028b5",
+    "authorName": "Claude Bot 58",
+    "email": "claude-bot-58@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "b1e34232-67e1-486a-bf3a-971e787a213f",
+    "authorName": "Claude Bot 54",
+    "email": "claude-bot-54@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "9e755bae-d23f-4e62-9f5f-0637c2cd80e7",
+    "authorName": "Claude Bot 52",
+    "email": "claude-bot-52@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "4f70c833-5f5f-47b0-8d48-8eca68767db6",
+    "authorName": "Claude Bot 57",
+    "email": "claude-bot-57@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "5ecbe7a8-cd2d-49d7-98c2-be50c65a8545",
+    "authorName": "Claude Bot 59",
+    "email": "claude-bot-59@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "de28547c-ddaa-48b0-a000-68f7734586b1",
+    "authorName": "Claude Bot 60",
+    "email": "claude-bot-60@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "efd89442-552e-4695-8ee5-fab199e7cc9b",
+    "authorName": "Claude Bot 56",
+    "email": "claude-bot-56@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "7d266363-2af6-4e1a-884d-ae76e5e66f5a",
+    "authorName": "Claude Bot 55",
+    "email": "claude-bot-55@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "8ad86e7e-1c42-4411-b25e-237ab56db27a",
+    "authorName": "Claude Bot 61",
+    "email": "claude-bot-61@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "b4cce1ef-5cb9-4e18-8203-8dc7966391ef",
+    "authorName": "Claude Bot 62",
+    "email": "claude-bot-62@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "4a2248c2-313a-4c21-b711-e03653f5930a",
+    "authorName": "Claude Bot 63",
+    "email": "claude-bot-63@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "a8222fd5-24d3-4011-8c37-7e7aa7578254",
+    "authorName": "Claude Bot 70",
+    "email": "claude-bot-70@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "89d918e7-df5b-41be-9ee9-ce3ac6af26e5",
+    "authorName": "Claude Bot 69",
+    "email": "claude-bot-69@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "0429a63b-f94f-4cc7-ba6c-1e594706c633",
+    "authorName": "Claude Bot 68",
+    "email": "claude-bot-68@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "4cb44c8e-19a3-478d-91c6-c52e59b7d1b0",
+    "authorName": "Claude Bot 65",
+    "email": "claude-bot-65@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "a815e51d-a6a7-4130-abbd-5e9a9a62e4cf",
+    "authorName": "Claude Bot 64",
+    "email": "claude-bot-64@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "6cd85ff1-623d-40b8-ab14-b4db181d02c9",
+    "authorName": "Claude Bot 67",
+    "email": "claude-bot-67@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "ad071a6e-93fc-415c-8572-ceaa1b0ae4bc",
+    "authorName": "Claude Bot 66",
+    "email": "claude-bot-66@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "b39af5ac-7a71-4475-93e6-274de0228604",
+    "authorName": "Claude Bot 71",
+    "email": "claude-bot-71@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "9158bc85-9535-4ad4-b355-01875009b8eb",
+    "authorName": "Claude Bot 73",
+    "email": "claude-bot-73@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "ebb5ee20-733a-4fb8-bab9-8b98c794fdd4",
+    "authorName": "Claude Bot 74",
+    "email": "claude-bot-74@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "18bbeaf3-ead0-485d-a119-2025f52e7711",
+    "authorName": "Claude Bot 75",
+    "email": "claude-bot-75@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "f7cd5ad0-351b-43cb-96f2-b01501341499",
+    "authorName": "Claude Bot 79",
+    "email": "claude-bot-79@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "e6a0e214-9831-45af-834b-87ea5807e5db",
+    "authorName": "Claude Bot 78",
+    "email": "claude-bot-78@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "0d9d0b95-fb6e-4c55-91d1-d5eea7753114",
+    "authorName": "Claude Bot 72",
+    "email": "claude-bot-72@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "0b99377c-28c1-48f6-b221-0b3d624b4532",
+    "authorName": "Claude Bot 77",
+    "email": "claude-bot-77@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "e0e4042a-fb1a-4178-b3ed-48bfe3c3b397",
+    "authorName": "Claude Bot 76",
+    "email": "claude-bot-76@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "889bbf60-2b44-431b-9c9f-ad10fda5ebfc",
+    "authorName": "Claude Bot 80",
+    "email": "claude-bot-80@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "e7e4f185-ce0c-40f6-9740-899b29bddeb4",
+    "authorName": "Claude Bot 82",
+    "email": "claude-bot-82@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "81bc33ad-ecf7-4cc2-a559-071c418cae04",
+    "authorName": "Claude Bot 84",
+    "email": "claude-bot-84@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "e71c1ce9-3bef-423e-ac18-64214953d9fc",
+    "authorName": "Claude Bot 81",
+    "email": "claude-bot-81@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "698e2e6c-2177-4b1f-bbd1-0c138be1ac81",
+    "authorName": "Claude Bot 90",
+    "email": "claude-bot-90@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "75f7c0f3-07ec-4ace-ae9f-62e68cf050e8",
+    "authorName": "Claude Bot 86",
+    "email": "claude-bot-86@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "918bff19-d605-46a2-9097-165ee45b834e",
+    "authorName": "Claude Bot 83",
+    "email": "claude-bot-83@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "65283958-fb02-4ac2-9c15-bd995b46d2d3",
+    "authorName": "Claude Bot 89",
+    "email": "claude-bot-89@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "adc24dd7-87a0-4ea0-8158-41d7441199cc",
+    "authorName": "Claude Bot 88",
+    "email": "claude-bot-88@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "913bf82a-b3b4-4e3e-b8eb-4f430ea69bd4",
+    "authorName": "Claude Bot 85",
+    "email": "claude-bot-85@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "20cf432a-3cc0-4a16-9653-5e17eff97229",
+    "authorName": "Claude Bot 87",
+    "email": "claude-bot-87@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "ee0bf7f3-28d7-43f9-a5af-742aa6925c89",
+    "authorName": "Claude Bot 98",
+    "email": "claude-bot-98@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "775f6b82-5f72-4b13-b793-8443dd5ab582",
+    "authorName": "Claude Bot 91",
+    "email": "claude-bot-91@stress-test.local",
+    "pointCount": 6
+  },
+  {
+    "id": "58b391e8-84d3-4380-9377-57420dab2dbe",
+    "authorName": "Claude Bot 93",
+    "email": "claude-bot-93@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "4b3f2c3b-129f-4481-aeab-f4785cf5648b",
+    "authorName": "Claude Bot 97",
+    "email": "claude-bot-97@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "3e2079cd-d67b-4369-99c0-69df3382fe61",
+    "authorName": "Claude Bot 94",
+    "email": "claude-bot-94@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "6fc44aa7-35dc-4f45-9408-5c47664c6317",
+    "authorName": "Claude Bot 95",
+    "email": "claude-bot-95@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "02912dba-fe95-4853-9f62-33762286de72",
+    "authorName": "Claude Bot 100",
+    "email": "claude-bot-100@stress-test.local",
+    "pointCount": 5
+  },
+  {
+    "id": "6877b788-4314-4959-8ab5-fcfc473721ac",
+    "authorName": "Claude Bot 96",
+    "email": "claude-bot-96@stress-test.local",
+    "pointCount": 4
+  },
+  {
+    "id": "a3ed4fa9-3d3f-4697-8329-f41109594fb3",
+    "authorName": "Claude Bot 99",
+    "email": "claude-bot-99@stress-test.local",
+    "pointCount": 3
+  },
+  {
+    "id": "22ea5d0b-a1e3-40ce-b1e7-e5e662483193",
+    "authorName": "Claude Bot 92",
+    "email": "claude-bot-92@stress-test.local",
+    "pointCount": 5
+  }
+]
