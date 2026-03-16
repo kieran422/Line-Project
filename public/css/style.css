@@ -947,24 +947,40 @@ body {
 
 .survey-rating-grid {
   display: flex;
-  gap: 4px;
+  gap: 0;
   justify-content: center;
   margin-bottom: 16px;
 }
 
-.survey-star {
-  font-size: 32px;
-  cursor: pointer;
+.survey-star-wrap {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 48px;
+  font-size: 42px;
+  line-height: 48px;
+  text-align: center;
   color: var(--text-dim);
-  transition: color 0.1s, transform 0.1s;
   user-select: none;
-  line-height: 1;
+  transition: transform 0.1s;
 }
 
-.survey-star:hover {
-  color: var(--silver-bright);
-  transform: scale(1.15);
+.survey-star-wrap:hover { transform: scale(1.1); }
+
+.survey-star-half {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 50%;
+  cursor: pointer;
+  z-index: 2;
 }
+
+.survey-star-left { left: 0; }
+.survey-star-right { right: 0; }
+
+.survey-star-wrap.star-full { color: #d4a830; }
+.survey-star-wrap.star-half-filled { color: #d4a830; }
 
 /* ── Leaderboard ──────────────────────────────────────────────────────────── */
 .leaderboard-meta {

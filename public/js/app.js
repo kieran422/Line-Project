@@ -1670,25 +1670,78 @@ function showSurveyStep() {
   surveyProgress.textContent = `${surveyIndex + 1} of ${surveyLines.length}`;
 
   surveyRatingBtns.innerHTML = '';
-  for (let i = 1; i <= 10; i++) {
-    const star = document.createElement('span');
-    star.className = 'survey-star';
-    star.textContent = '\u2606'; // empty star
-    star.dataset.value = i;
-    star.addEventListener('mouseenter', () => {
-      // Fill stars up to this one on hover
-      surveyRatingBtns.querySelectorAll('.survey-star').forEach(s => {
-        s.textContent = parseInt(s.dataset.value) <= i ? '\u2605' : '\u2606';
-      });
-    });
-    star.addEventListener('mouseleave', () => {
-      surveyRatingBtns.querySelectorAll('.survey-star').forEach(s => {
-        s.textContent = '\u2606';
-      });
-    });
-    star.addEventListener('click', () => rateLine(i));
-    surveyRatingBtns.appendChild(star);
+  // 5 stars, left half = odd values (1,3,5,7,9), right half = even (2,4,6,8,10)
+  for (let s = 1; s <= 5; s++) {
+    const wrap = document.createElement('span');
+    wrap.className = 'survey-star-wrap';
+    wrap.textContent = '\u2606'; // empty star
+    wrap.dataset.star = s;
+
+    const left = document.createElement('span');
+    left.className = 'survey-star-half survey-star-left';
+    left.dataset.value = s * 2 - 1;
+
+    const right = document.createElement('span');
+    right.className = 'survey-star-half survey-star-right';
+    right.dataset.value = s * 2;
+
+    wrap.appendChild(left);
+    wrap.appendChild(right);
+    surveyRatingBtns.appendChild(wrap);
   }
+
+  function updateStarDisplay(val) {
+    surveyRatingBtns.querySelectorAll('.survey-star-wrap').forEach((wrap, i) => {
+      const fullVal = (i + 1) * 2;
+      const halfVal = fullVal - 1;
+      wrap.classList.remove('star-full', 'star-half-filled');
+      if (val >= fullVal) {
+        wrap.textContent = '\u2605';
+        wrap.classList.add('star-full');
+      } else if (val >= halfVal) {
+        wrap.textContent = '\u2605';
+        wrap.classList.add('star-half-filled');
+        // Use clip to show half — CSS handles the gold color
+      } else {
+        wrap.textContent = '\u2606';
+      }
+      // Re-append the invisible click zones
+      const l = document.createElement('span');
+      l.className = 'survey-star-half survey-star-left';
+      l.dataset.value = (i + 1) * 2 - 1;
+      const r = document.createElement('span');
+      r.className = 'survey-star-half survey-star-right';
+      r.dataset.value = (i + 1) * 2;
+      wrap.appendChild(l);
+      wrap.appendChild(r);
+    });
+  }
+
+  function resetStars() {
+    surveyRatingBtns.querySelectorAll('.survey-star-wrap').forEach(wrap => {
+      wrap.textContent = '\u2606';
+      wrap.classList.remove('star-full', 'star-half-filled');
+      const i = parseInt(wrap.dataset.star) - 1;
+      const l = document.createElement('span');
+      l.className = 'survey-star-half survey-star-left';
+      l.dataset.value = (i + 1) * 2 - 1;
+      const r = document.createElement('span');
+      r.className = 'survey-star-half survey-star-right';
+      r.dataset.value = (i + 1) * 2;
+      wrap.appendChild(l);
+      wrap.appendChild(r);
+    });
+  }
+
+  surveyRatingBtns.addEventListener('mouseover', (e) => {
+    const half = e.target.closest('.survey-star-half');
+    if (half) updateStarDisplay(parseInt(half.dataset.value));
+  });
+  surveyRatingBtns.addEventListener('mouseleave', resetStars);
+  surveyRatingBtns.addEventListener('click', (e) => {
+    const half = e.target.closest('.survey-star-half');
+    if (half) rateLine(parseInt(half.dataset.value));
+  });
 
   surveyModal.classList.remove('hidden');
 }
@@ -1742,7 +1795,8 @@ function showLeaderboard(data) {
     const div = document.createElement('div');
     div.className = 'leaderboard-item';
     div.dataset.lineid = entry.lineId;
-    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    const outOf5 = (entry.averageScore / 2).toFixed(1);
+    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${outOf5} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
     div.addEventListener('click', () => {
       selectedElement = { type: 'line', id: entry.lineId };
       leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
