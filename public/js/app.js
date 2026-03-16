@@ -1797,24 +1797,30 @@ function showLeaderboard(data) {
     div.appendChild(dropdown);
 
     header.addEventListener('click', () => {
-      // Close other open dropdowns
+      const wasActive = div.classList.contains('leaderboard-active');
+
+      // Close all dropdowns and deselect all
       leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => {
-        if (el !== div) {
-          el.classList.remove('leaderboard-active', 'leaderboard-open');
-        }
+        el.classList.remove('leaderboard-active', 'leaderboard-open');
       });
-      // Toggle this one
-      div.classList.toggle('leaderboard-open');
-      div.classList.toggle('leaderboard-active');
-      // Highlight line on canvas
-      if (div.classList.contains('leaderboard-open')) {
-        selectedElement = { type: 'line', id: entry.lineId };
-        leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
-      } else {
+
+      if (wasActive) {
+        // Clicking same entry — deselect
         selectedElement = null;
         leaderboardHighlight = null;
+      } else {
+        // Clicking new entry — highlight only, no dropdown
+        div.classList.add('leaderboard-active');
+        selectedElement = { type: 'line', id: entry.lineId };
+        leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
       }
       render();
+    });
+
+    // Chevron toggles the vote dropdown independently
+    header.querySelector('.leaderboard-chevron').addEventListener('click', (e) => {
+      e.stopPropagation();
+      div.classList.toggle('leaderboard-open');
     });
     leaderboardList.appendChild(div);
   }
