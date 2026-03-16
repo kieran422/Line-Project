@@ -346,11 +346,16 @@ function render() {
   const df = viewingSnapshot !== null ? snapshots[viewingSnapshot]?.frames || [] : frames;
 
   drawGrid();
-  drawLines(dl);
+  if (leaderboardHighlight) {
+    drawLines(dl, { dimExcept: leaderboardHighlight.lineId, dimAlpha: 0.12 });
+  } else {
+    drawLines(dl);
+  }
   drawFrames(df, dl);
   drawPreview();
   drawSelectedHandles(dl);
   drawInsertPointIndicator();
+  drawLeaderboardLabel();
 }
 
 function drawGrid() {
@@ -599,6 +604,58 @@ function drawInsertPointIndicator() {
   ctx.beginPath();
   ctx.moveTo(p.x - 4, p.y); ctx.lineTo(p.x + 4, p.y);
   ctx.moveTo(p.x, p.y - 4); ctx.lineTo(p.x, p.y + 4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLeaderboardLabel() {
+  if (!leaderboardHighlight) return;
+  const line = lines.find(l => l.id === leaderboardHighlight.lineId);
+  if (!line || line.points.length < 2) return;
+
+  // Find the topmost point of the line to place the label above it
+  let topPt = line.points[0];
+  for (const p of line.points) {
+    if (p.y < topPt.y) topPt = p;
+  }
+
+  const cp = gridToCanvas(topPt.x, topPt.y);
+  const name = leaderboardHighlight.authorName;
+
+  // Draw label background
+  ctx.save();
+  ctx.font = '13px "Cormorant Garamond", Georgia, serif';
+  ctx.textAlign = 'center';
+  const tw = ctx.measureText(name).width;
+  const px = cp.x, py = cp.y - 18;
+
+  ctx.fillStyle = 'rgba(8,8,8,0.85)';
+  ctx.beginPath();
+  ctx.roundRect(px - tw / 2 - 10, py - 12, tw + 20, 22, 3);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(192,192,192,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillText(name, px, py + 4);
+  ctx.restore();
+
+  // Extra glow pass on the highlighted line
+  const curve = computeLineCurve(line.points);
+  ctx.save();
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = LED_COLOR;
+  ctx.lineWidth = LED_LINE_WIDTH * 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  for (let i = 0; i < curve.length; i++) {
+    const p = gridToCanvas(curve[i].x, curve[i].y);
+    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  }
   ctx.stroke();
   ctx.restore();
 }
@@ -1473,6 +1530,7 @@ pdfBtn.addEventListener('click', exportPDF);
 // ── Survey & Leaderboard ─────────────────────────────────────────────────────
 
 let surveyActive = false;
+let leaderboardHighlight = null; // { lineId, authorName }
 let surveyLines = [];
 let surveyIndex = 0;
 let surveyRatings = [];
@@ -1507,6 +1565,7 @@ surveyCancelBtn.addEventListener('click', () => {
 closeLeaderboard.addEventListener('click', () => {
   leaderboardPanel.classList.add('hidden');
   selectedElement = null;
+  leaderboardHighlight = null;
   render();
 });
 
@@ -1683,13 +1742,10 @@ function showLeaderboard(data) {
     const div = document.createElement('div');
     div.className = 'leaderboard-item';
     div.dataset.lineid = entry.lineId;
-    const fullStars = Math.round(entry.averageScore);
-    const stars = '\u2605'.repeat(fullStars) + '\u2606'.repeat(10 - fullStars);
-    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-stars">${stars}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)}</span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
+    div.innerHTML = `<span class="leaderboard-rank">#${entry.rank}</span><span class="leaderboard-author">${entry.authorName}</span><span class="leaderboard-score">${entry.averageScore.toFixed(1)} <span class="leaderboard-star">\u2605</span></span><span class="leaderboard-votes">${entry.totalRatings} vote${entry.totalRatings !== 1 ? 's' : ''}</span>`;
     div.addEventListener('click', () => {
-      // Highlight this line on the canvas
       selectedElement = { type: 'line', id: entry.lineId };
-      // Update active state on leaderboard items
+      leaderboardHighlight = { lineId: entry.lineId, authorName: entry.authorName };
       leaderboardList.querySelectorAll('.leaderboard-item').forEach(el => el.classList.remove('leaderboard-active'));
       div.classList.add('leaderboard-active');
       render();

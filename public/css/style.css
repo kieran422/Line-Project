@@ -962,7 +962,7 @@ body {
 }
 
 .survey-star:hover {
-  color: #f0c040;
+  color: var(--silver-bright);
   transform: scale(1.15);
 }
 
@@ -1014,11 +1014,9 @@ body {
   flex: 1;
 }
 
-.leaderboard-stars {
+.leaderboard-star {
+  color: var(--silver-bright);
   font-size: 14px;
-  color: #f0c040;
-  letter-spacing: 1px;
-  white-space: nowrap;
 }
 
 .leaderboard-score {
