@@ -256,7 +256,7 @@ function computeLineCurve(pts) {
     all.push(...seg);
   }
   // Keep cache small
-  if (curveCache.size > 100) curveCache.clear();
+  if (curveCache.size > 500) curveCache.clear();
   curveCache.set(key, all);
   return all;
 }
@@ -385,9 +385,19 @@ function drawGrid() {
   ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 }
 
+function isLineVisible(pts) {
+  // Quick check if any point is within the viewport
+  for (const p of pts) {
+    const cp = gridToCanvas(p.x, p.y);
+    if (cp.x > -200 && cp.x < canvas.width + 200 && cp.y > -200 && cp.y < canvas.height + 200) return true;
+  }
+  return false;
+}
+
 function drawLines(dl) {
   for (const line of dl) {
     if (line.points.length < 2) continue;
+    if (!isLineVisible(line.points)) continue;
     const curve = computeLineCurve(line.points);
     const hovered = hoveredElement?.type === 'line' && hoveredElement.id === line.id;
     const sel = isSelected('line', line.id);
@@ -661,8 +671,18 @@ function drawPreview() {
 // ── Hit Testing ──────────────────────────────────────────────────────────────
 
 function hitTestLine(gx, gy, line, wide) {
-  const curve = computeLineCurve(line.points);
-  const thresh = pixelToFeet(wide ? 24 : 14); // 14px unselected — generous for thin lines
+  // Quick bounding box check to skip lines far from the click
+  const pts = line.points;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  const margin = 1.5; // account for sag + hit threshold
+  if (gx < minX - margin || gx > maxX + margin || gy < minY - margin || gy > maxY + margin) return false;
+
+  const curve = computeLineCurve(pts);
+  const thresh = pixelToFeet(wide ? 24 : 14);
   for (let i = 1; i < curve.length; i++) {
     if (distToSeg(gx, gy, curve[i - 1].x, curve[i - 1].y, curve[i].x, curve[i].y) < thresh) return true;
   }
