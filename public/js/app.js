@@ -1359,6 +1359,8 @@ function initSocket() {
       isAdmin = true;
       adminToggle.style.borderColor = '#cc2222';
       adminToggle.style.color = '#cc2222';
+      backToProjects.classList.remove('hidden');
+      if (projectsToggle) projectsToggle.classList.remove('hidden');
     }
     lines = data.state.lines; frames = data.state.frames;
     deleteRequests = data.state.deleteRequests; snapshots = data.state.snapshots;
@@ -1467,7 +1469,8 @@ function doLogin() {
   loggedInEmail = email;
 
   loginScreen.classList.add('hidden');
-  showProjectsPage();
+  // Go straight to the composition
+  openProject();
 }
 
 function showProjectsPage() {
@@ -1555,6 +1558,9 @@ function openProject() {
   } else {
     resizeCanvas();
   }
+
+  // Back button only visible for admins
+  backToProjects.classList.toggle('hidden', !isAdmin);
 }
 
 projectCard.addEventListener('click', openProject);
@@ -1563,6 +1569,16 @@ backToProjects.addEventListener('click', () => {
   appDiv.classList.add('hidden');
   showProjectsPage();
 });
+
+// Projects button in toolbar (admin only)
+const projectsToggle = document.getElementById('projects-toggle');
+if (projectsToggle) {
+  projectsToggle.addEventListener('click', () => {
+    if (!isAdmin) return;
+    appDiv.classList.add('hidden');
+    showProjectsPage();
+  });
+}
 
 // ── PDF Export ───────────────────────────────────────────────────────────────
 
@@ -1998,6 +2014,8 @@ adminSubmit.addEventListener('click', () => {
     adminToggle.style.borderColor = '#cc2222';
     adminToggle.style.color = '#cc2222';
     showToast('Admin mode activated.');
+    backToProjects.classList.remove('hidden');
+    if (projectsToggle) projectsToggle.classList.remove('hidden');
     // Persist admin status on the server for this user
     if (currentUser?.email) {
       fetch('/api/admin/grant', {
