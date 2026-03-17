@@ -1447,15 +1447,14 @@ function initLogin() {
 }
 
 const projectsPage = document.getElementById('projects-page');
-const projectCard = document.getElementById('project-card');
-const projectMeta = document.getElementById('project-meta');
-const projectPreview = document.getElementById('project-preview');
+const projectsGrid = document.getElementById('projects-grid');
 const projectsUserLabel = document.getElementById('projects-user-label');
 const backToProjects = document.getElementById('back-to-projects');
 
 let loggedInName = '';
 let loggedInEmail = '';
 let appInitialized = false;
+let currentProjectId = 'collaborative-student';
 
 function doLogin() {
   const name = fullNameInput.value.trim(), email = emailInput.value.trim();
@@ -1469,7 +1468,7 @@ function doLogin() {
   loggedInEmail = email;
 
   loginScreen.classList.add('hidden');
-  // Go straight to the composition
+  currentProjectId = 'collaborative-student';
   openProject();
 }
 
@@ -1477,42 +1476,69 @@ function showProjectsPage() {
   projectsPage.classList.remove('hidden');
   appDiv.classList.add('hidden');
   projectsUserLabel.textContent = loggedInName;
-
-  // Render a small preview thumbnail by connecting temporarily
-  renderProjectThumbnail();
+  loadProjectCards();
 }
 
-function renderProjectThumbnail() {
-  const pc = projectPreview.getContext('2d');
-  projectPreview.width = 400;
-  projectPreview.height = 160;
+function loadProjectCards() {
+  fetch('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  })
+  .then(r => r.json())
+  .then(data => {
+    projectsGrid.innerHTML = '';
+    for (const p of data.projects) {
+      const card = document.createElement('div');
+      card.className = 'project-card';
 
-  // Temporarily connect to get state for thumbnail
+      const thumb = document.createElement('div');
+      thumb.className = 'project-thumbnail';
+      const cv = document.createElement('canvas');
+      cv.width = 400; cv.height = 160;
+      thumb.appendChild(cv);
+
+      const info = document.createElement('div');
+      info.className = 'project-info';
+      info.innerHTML = `<h3 class="project-name">${p.name}</h3><p class="project-meta">${p.lineCount} line${p.lineCount !== 1 ? 's' : ''}, ${p.frameCount} frame${p.frameCount !== 1 ? 's' : ''}</p>`;
+
+      card.appendChild(thumb);
+      card.appendChild(info);
+
+      card.addEventListener('click', () => {
+        currentProjectId = p.id;
+        openProject();
+      });
+
+      projectsGrid.appendChild(card);
+
+      // Render thumbnail
+      renderCardThumbnail(cv, p.id);
+    }
+  })
+  .catch(() => {});
+}
+
+function renderCardThumbnail(cvEl, projectId) {
   const tempSocket = io();
-  tempSocket.emit('join', { name: loggedInName, email: loggedInEmail });
+  tempSocket.emit('join', { name: loggedInName, email: loggedInEmail, projectId });
   tempSocket.on('joined', (data) => {
     const dl = data.state.lines || [];
     const df = data.state.frames || [];
+    const pc = cvEl.getContext('2d');
 
-    // Update meta
-    projectMeta.textContent = `${dl.length} line${dl.length !== 1 ? 's' : ''}, ${df.length} frame${df.length !== 1 ? 's' : ''}`;
-
-    // Render mini preview
     const savedCtx = ctx, savedCanvas = canvas;
     const savedBase = baseScale, savedZoom = zoomLevel;
     const savedVCX = viewCenterX, savedVCY = viewCenterY;
     const savedHover = hoveredElement, savedSel = selectedElement;
 
-    canvas = projectPreview;
-    ctx = pc;
+    canvas = cvEl; ctx = pc;
     baseScale = (400 - 10) / GRID_WIDTH_FT;
     zoomLevel = 1;
     viewCenterX = GRID_WIDTH_FT / 2;
     viewCenterY = GRID_HEIGHT_FT / 2;
-    hoveredElement = null;
-    selectedElement = null;
+    hoveredElement = null; selectedElement = null;
 
-    // Temporarily set lines/frames for rendering
     const savedLines = lines.slice();
     const savedFrames = frames.slice();
     lines.length = 0; frames.length = 0;
@@ -1525,19 +1551,14 @@ function renderProjectThumbnail() {
     drawLines(lines);
     drawFrames(frames, lines);
 
-    // Restore everything
     lines.length = 0; frames.length = 0;
     for (const l of savedLines) lines.push(l);
     for (const f of savedFrames) frames.push(f);
 
-    canvas = savedCanvas;
-    ctx = savedCtx;
-    baseScale = savedBase;
-    zoomLevel = savedZoom;
-    viewCenterX = savedVCX;
-    viewCenterY = savedVCY;
-    hoveredElement = savedHover;
-    selectedElement = savedSel;
+    canvas = savedCanvas; ctx = savedCtx;
+    baseScale = savedBase; zoomLevel = savedZoom;
+    viewCenterX = savedVCX; viewCenterY = savedVCY;
+    hoveredElement = savedHover; selectedElement = savedSel;
 
     tempSocket.disconnect();
   });
@@ -1553,9 +1574,15 @@ function openProject() {
     initCanvas(); initInput(); initTools(); initZoom(); initPlayhead();
     document.querySelector('[data-tool="view"]').classList.add('active');
     initSocket();
-    socket.emit('join', { name: loggedInName, email: loggedInEmail });
+    socket.emit('join', { name: loggedInName, email: loggedInEmail, projectId: currentProjectId });
     appInitialized = true;
   } else {
+    // Reconnect to the selected project
+    if (socket) {
+      socket.disconnect();
+      socket.connect();
+      socket.emit('join', { name: loggedInName, email: loggedInEmail, projectId: currentProjectId });
+    }
     resizeCanvas();
   }
 

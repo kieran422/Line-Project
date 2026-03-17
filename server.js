@@ -98,7 +98,25 @@ app.post('/api/admin/delete-user', (req, res) => {
 });
 
 // Submit survey ratings
+// Projects list API
+app.post('/api/projects', (req, res) => {
+  const result = PROJECT_LIST.map(p => {
+    const proj = projects.get(p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      lineCount: proj ? proj.lines.size : 0,
+      frameCount: proj ? proj.frames.size : 0
+    };
+  });
+  return res.json({ projects: result });
+});
+
 app.post('/api/ratings/submit', (req, res) => {
+  const projectId = req.body.projectId || 'collaborative-student';
+  const proj = projects.get(projectId);
+  if (!proj) return res.status(404).json({ error: 'project not found' });
+  bindProject(proj);
   const email = (req.body.email || '').toLowerCase().trim();
   const profile = profiles.get(email);
   if (!profile) return res.status(404).json({ error: 'user not found' });
@@ -124,6 +142,10 @@ app.post('/api/ratings/submit', (req, res) => {
 
 // Get unrated lines for a user
 app.post('/api/ratings/unrated', (req, res) => {
+  const projectId = req.body.projectId || 'collaborative-student';
+  const proj = projects.get(projectId);
+  if (!proj) return res.status(404).json({ error: 'project not found' });
+  bindProject(proj);
   const email = (req.body.email || '').toLowerCase().trim();
   const profile = profiles.get(email);
   if (!profile) return res.status(404).json({ error: 'user not found' });
@@ -139,6 +161,10 @@ app.post('/api/ratings/unrated', (req, res) => {
 
 // Get leaderboard
 app.post('/api/ratings/leaderboard', (req, res) => {
+  const projectId = req.body.projectId || 'collaborative-student';
+  const proj = projects.get(projectId);
+  if (!proj) return res.status(404).json({ error: 'project not found' });
+  bindProject(proj);
 
   // Aggregate ratings per line
   const lineScores = new Map(); // lineId → { scores: [], authorName, authorId }
@@ -207,31 +233,87 @@ for (const p of loadedProfiles) {
   profiles.set(p.email, p);
 }
 
-// Active sessions: socketId → profileId
+// Active sessions: socketId → { profileId, projectId }
 const sessions = new Map();
 
-// Load persisted state
-const savedState = loadJSON(STATE_FILE, { lines: [], frames: [], deleteRequests: [], snapshots: [], totalElements: 0 });
+// ── Multi-Project System ─────────────────────────────────────────────────────
+const PROJECT_LIST = [
+  { id: 'collaborative-student', name: 'Collaborative Student Project' },
+  { id: 'ai-test', name: 'Ai Test' }
+];
 
-const lines = new Map();
-for (const l of savedState.lines) lines.set(l.id, l);
+const projects = new Map(); // projectId → { lines, frames, deleteRequests, ratings, snapshots, totalElements, lastEditorId, lastEditorName }
 
-const frames = new Map();
-for (const f of savedState.frames) frames.set(f.id, f);
-
-const deleteRequests = new Map();
-
-// Ratings: key "raterId:lineId" → { raterId, raterName, lineId, lineAuthorId, lineAuthorName, score, timestamp }
-const ratings = new Map();
-for (const r of (savedState.ratings || [])) {
-  ratings.set(r.raterId + ':' + r.lineId, r);
+function loadProject(id) {
+  const file = path.join(DATA_DIR, `state-${id}.json`);
+  const saved = loadJSON(file, { lines: [], frames: [], deleteRequests: [], snapshots: [], totalElements: 0, ratings: [] });
+  const proj = {
+    id,
+    lines: new Map(),
+    frames: new Map(),
+    deleteRequests: new Map(),
+    ratings: new Map(),
+    snapshots: saved.snapshots || [],
+    totalElements: saved.totalElements || 0,
+    lastEditorId: saved.lastEditorId || null,
+    lastEditorName: saved.lastEditorName || null
+  };
+  for (const l of (saved.lines || [])) proj.lines.set(l.id, l);
+  for (const f of (saved.frames || [])) proj.frames.set(f.id, f);
+  for (const r of (saved.deleteRequests || [])) proj.deleteRequests.set(r.id, r);
+  for (const r of (saved.ratings || [])) proj.ratings.set(r.raterId + ':' + r.lineId, r);
+  return proj;
 }
-for (const r of savedState.deleteRequests) deleteRequests.set(r.id, r);
 
-const snapshots = savedState.snapshots || [];
-let totalElements = savedState.totalElements || 0;
-let lastEditorId = savedState.lastEditorId || null;
-let lastEditorName = savedState.lastEditorName || null;
+function saveProject(proj) {
+  const file = path.join(DATA_DIR, `state-${proj.id}.json`);
+  saveJSON(file, {
+    lines: Array.from(proj.lines.values()),
+    frames: Array.from(proj.frames.values()),
+    deleteRequests: Array.from(proj.deleteRequests.values()),
+    snapshots: proj.snapshots,
+    totalElements: proj.totalElements,
+    lastEditorId: proj.lastEditorId,
+    lastEditorName: proj.lastEditorName,
+    ratings: Array.from(proj.ratings.values())
+  });
+}
+
+// Migrate old state.json to the default project if needed
+const oldStateFile = path.join(DATA_DIR, 'state.json');
+const defaultProjFile = path.join(DATA_DIR, 'state-collaborative-student.json');
+if (fs.existsSync(oldStateFile) && !fs.existsSync(defaultProjFile)) {
+  fs.renameSync(oldStateFile, defaultProjFile);
+  console.log('Migrated state.json → state-collaborative-student.json');
+}
+
+// Load all projects
+for (const p of PROJECT_LIST) {
+  projects.set(p.id, loadProject(p.id));
+}
+
+// Helper to get project for a socket
+function getSessionProject(socketId) {
+  const sess = sessions.get(socketId);
+  if (!sess) return null;
+  return projects.get(sess.projectId) || null;
+}
+
+// Convenience aliases for backward compat in socket handlers
+// These will be set per-handler call
+let lines, frames, deleteRequests, ratings, snapshots, totalElements, lastEditorId, lastEditorName;
+
+function bindProject(proj) {
+  _boundProject = proj;
+  lines = proj.lines;
+  frames = proj.frames;
+  deleteRequests = proj.deleteRequests;
+  ratings = proj.ratings;
+  snapshots = proj.snapshots;
+  totalElements = proj.totalElements;
+  lastEditorId = proj.lastEditorId;
+  lastEditorName = proj.lastEditorName;
+}
 
 const COLORS = [
   '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7be',
@@ -255,35 +337,34 @@ function saveProfiles() {
   saveJSON(PROFILES_FILE, Array.from(profiles.values()));
 }
 
-function saveState() {
-  saveJSON(STATE_FILE, {
-    lines: Array.from(lines.values()),
-    frames: Array.from(frames.values()),
-    deleteRequests: Array.from(deleteRequests.values()),
-    snapshots,
-    totalElements,
-    lastEditorId,
-    lastEditorName,
-    ratings: Array.from(ratings.values())
-  });
+let _boundProject = null;
+
+function saveState(proj) {
+  const p = proj || _boundProject;
+  if (!p) return;
+  p.totalElements = totalElements;
+  p.lastEditorId = lastEditorId;
+  p.lastEditorName = lastEditorName;
+  saveProject(p);
 }
 
-function getFullState() {
+function getFullState(proj) {
   return {
-    lines: Array.from(lines.values()),
-    frames: Array.from(frames.values()),
-    deleteRequests: Array.from(deleteRequests.values()),
-    snapshots,
-    totalElements,
-    lastEditorId,
-    lastEditorName
+    lines: Array.from(proj.lines.values()),
+    frames: Array.from(proj.frames.values()),
+    deleteRequests: Array.from(proj.deleteRequests.values()),
+    snapshots: proj.snapshots,
+    totalElements: proj.totalElements,
+    lastEditorId: proj.lastEditorId,
+    lastEditorName: proj.lastEditorName
   };
 }
 
-// Snapshot on editor handoff: when a new user edits, capture previous user's work
+// Snapshot on editor handoff
 function onEdit(profileId, profileName) {
+  const proj = _boundProject;
+  if (!proj) return;
   if (lastEditorId && lastEditorId !== profileId) {
-    // Editor changed — snapshot the state as left by the previous editor
     snapshots.push({
       id: snapshots.length,
       editorName: lastEditorName,
@@ -296,6 +377,8 @@ function onEdit(profileId, profileName) {
   }
   lastEditorId = profileId;
   lastEditorName = profileName;
+  proj.lastEditorId = profileId;
+  proj.lastEditorName = profileName;
 }
 
 function getOrCreateProfile(email, name) {
@@ -327,21 +410,31 @@ io.on('connection', (socket) => {
 
   socket.on('join', (data) => {
     const profile = getOrCreateProfile(data.email, data.name);
+    const projectId = data.projectId || 'collaborative-student';
+    const proj = projects.get(projectId);
+    if (!proj) return;
 
-    // Map this socket to the profile
-    sessions.set(socket.id, profile.id);
+    // Map this socket to the profile and project
+    sessions.set(socket.id, { profileId: profile.id, projectId });
+    socket.join('project:' + projectId);
+    bindProject(proj);
 
-    // Send the user their profile info + full state
     socket.emit('joined', {
       user: { id: profile.id, name: profile.name, email: profile.email, color: profile.color, isAdmin: profile.isAdmin || false },
-      state: getFullState()
+      state: getFullState(proj),
+      projectId
     });
     io.emit('user-joined', { id: profile.id, name: profile.name });
     console.log(`User joined: ${profile.name} (${profile.email})`);
   });
 
   socket.on('place-line', (data) => {
-    const profileId = sessions.get(socket.id);
+    const sess = sessions.get(socket.id);
+    if (!sess) return;
+    const profileId = sess.profileId;
+    const proj = projects.get(sess.projectId);
+    if (!proj) return;
+    bindProject(proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (!profile) return;
 
@@ -366,7 +459,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('place-frame', (data) => {
-    const profileId = sessions.get(socket.id);
+    const sess = sessions.get(socket.id);
+    if (!sess) return;
+    const profileId = sess.profileId;
+    const proj = projects.get(sess.projectId);
+    if (!proj) return;
+    bindProject(proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (!profile) return;
 
@@ -393,7 +491,10 @@ io.on('connection', (socket) => {
     const line = lines.get(data.id);
     if (!line) return;
 
-    const profileId = sessions.get(socket.id);
+    const _s = sessions.get(socket.id);
+    const profileId = _s?.profileId;
+    const _proj = _s ? projects.get(_s.projectId) : null;
+    if (_proj) bindProject(_proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
 
     // Enforce 20ft max strip length server-side
@@ -417,7 +518,10 @@ io.on('connection', (socket) => {
     const frame = frames.get(data.id);
     if (!frame) return;
 
-    const profileId = sessions.get(socket.id);
+    const _s = sessions.get(socket.id);
+    const profileId = _s?.profileId;
+    const _proj = _s ? projects.get(_s.projectId) : null;
+    if (_proj) bindProject(_proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (profile) onEdit(profile.id, profile.name);
 
@@ -428,7 +532,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('notify-edit', (data) => {
-    const profileId = sessions.get(socket.id);
+    const _s = sessions.get(socket.id);
+    const profileId = _s?.profileId;
+    const _proj = _s ? projects.get(_s.projectId) : null;
+    if (_proj) bindProject(_proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (!profile || !data.authorId) return;
     if (profile.id === data.authorId) return;
@@ -449,8 +556,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('delete-own', (data) => {
-    const profileId = sessions.get(socket.id);
-    if (!profileId) return;
+    const _sd = sessions.get(socket.id);
+    if (!_sd) return;
+    const profileId = _sd.profileId;
+    const _projd = projects.get(_sd.projectId);
+    if (_projd) bindProject(_projd);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
 
     // Snapshot before this user's edit is applied
@@ -479,7 +589,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('request-delete', (data) => {
-    const profileId = sessions.get(socket.id);
+    const sess = sessions.get(socket.id);
+    if (!sess) return;
+    const profileId = sess.profileId;
+    const proj = projects.get(sess.projectId);
+    if (!proj) return;
+    bindProject(proj);
     const profile = Array.from(profiles.values()).find(p => p.id === profileId);
     if (!profile) return;
 
@@ -499,18 +614,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('approve-delete', (data) => {
+    const _sa = sessions.get(socket.id);
+    if (!_sa) return;
+    const profileId = _sa.profileId;
+    const _proja = projects.get(_sa.projectId);
+    if (_proja) bindProject(_proja);
+
     const request = deleteRequests.get(data.requestId);
     if (!request) return;
-
-    const profileId = sessions.get(socket.id);
-    if (!profileId) return;
     if (request.elementAuthorId !== profileId) return;
 
     request.status = 'approved';
     if (request.elementType === 'line') lines.delete(request.elementId);
     else frames.delete(request.elementId);
 
-    saveState();
+    saveState(_proja);
     io.emit('delete-approved', {
       requestId: request.id,
       elementId: request.elementId,
@@ -519,20 +637,24 @@ io.on('connection', (socket) => {
   });
 
   socket.on('deny-delete', (data) => {
+    const _sn = sessions.get(socket.id);
+    if (!_sn) return;
+    const profileId = _sn.profileId;
+    const _projn = projects.get(_sn.projectId);
+    if (_projn) bindProject(_projn);
+
     const request = deleteRequests.get(data.requestId);
     if (!request) return;
-
-    const profileId = sessions.get(socket.id);
-    if (!profileId) return;
     if (request.elementAuthorId !== profileId) return;
 
     request.status = 'denied';
-    saveState();
+    saveState(_projn);
     io.emit('delete-denied', { requestId: request.id });
   });
 
   socket.on('disconnect', () => {
-    const profileId = sessions.get(socket.id);
+    const _sdc = sessions.get(socket.id);
+    const profileId = _sdc?.profileId;
     if (profileId) {
       const profile = Array.from(profiles.values()).find(p => p.id === profileId);
       if (profile) {
