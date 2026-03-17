@@ -1604,8 +1604,7 @@ const aiGenerateBtn = document.getElementById('ai-generate-btn');
 if (aiGenerateBtn) {
   aiGenerateBtn.addEventListener('click', () => {
     if (currentProjectId !== 'ai-test') return;
-    if (!confirm('Generate an AI composition? This will replace any existing AI lines in this project.')) return;
-    showToast('Generating composition...');
+    showToast('Generating new composition...');
     fetch('/api/ai-generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
