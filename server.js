@@ -200,6 +200,176 @@ app.post('/api/ratings/leaderboard', (req, res) => {
   return res.json({ leaderboard, totalRaters: raterIds.size });
 });
 
+// AI Composition Generator (Ai Test project only)
+app.post('/api/ai-generate', (req, res) => {
+  const projectId = req.body.projectId;
+  if (projectId !== 'ai-test') return res.status(400).json({ error: 'AI generation only available for Ai Test project' });
+
+  const proj = projects.get('ai-test');
+  if (!proj) return res.status(404).json({ error: 'project not found' });
+
+  // Clear existing AI lines
+  for (const [id, line] of proj.lines.entries()) {
+    if (line.authorName.startsWith('AI Composer')) proj.lines.delete(id);
+  }
+  for (const [id, frame] of proj.frames.entries()) {
+    if (frame.authorName.startsWith('AI Composer')) proj.frames.delete(id);
+  }
+
+  const GRID_W = 40, GRID_H = 8;
+  const generated = { lines: [], frames: [] };
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ── Jazz-inspired composition algorithm ──
+  // Structure: Solo lines (sparse, sweeping), Duets (paired), Quintet clusters, Choir (dense zones)
+  // Principle: Tension (compressed, close points) and Release (wide, sweeping arcs)
+
+  const allLines = [];
+
+  // === SOLO LINES (6 lines) — long sweeping arcs spanning most of the grid ===
+  for (let i = 0; i < 6; i++) {
+    const startX = rand(0.5, 5);
+    const startY = rand(1, GRID_H - 1);
+    const endX = rand(35, 39.5);
+    const endY = rand(1, GRID_H - 1);
+    const pts = [{ x: startX, y: startY }];
+    // 3-4 gentle undulations across the span
+    const numMid = 3 + Math.floor(Math.random() * 2);
+    for (let j = 1; j <= numMid; j++) {
+      const t = j / (numMid + 1);
+      const x = startX + t * (endX - startX) + rand(-1.5, 1.5);
+      const y = startY + t * (endY - startY) + rand(-2, 2) * Math.sin(t * Math.PI);
+      pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+    }
+    pts.push({ x: endX, y: endY });
+    allLines.push(pts);
+  }
+
+  // === DUET LINES (8 lines, 4 pairs) — two lines that mirror/complement each other ===
+  for (let pair = 0; pair < 4; pair++) {
+    const cx = rand(5, 35);
+    const cy = rand(2, GRID_H - 2);
+    const span = rand(6, 12);
+    for (let d = 0; d < 2; d++) {
+      const offset = d === 0 ? -0.4 : 0.4;
+      const startX = cx - span / 2;
+      const endX = cx + span / 2;
+      const pts = [{ x: clamp(startX, 0.3, GRID_W - 0.3), y: clamp(cy + offset - 1, 0.3, GRID_H - 0.3) }];
+      const numMid = 3 + Math.floor(Math.random() * 3);
+      for (let j = 1; j <= numMid; j++) {
+        const t = j / (numMid + 1);
+        const x = startX + t * (endX - startX);
+        const wave = Math.sin(t * Math.PI * (1.5 + pair * 0.3)) * (1.5 + rand(-0.5, 0.5));
+        const y = cy + offset + wave * (d === 0 ? 1 : -1);
+        pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+      }
+      pts.push({ x: clamp(endX, 0.3, GRID_W - 0.3), y: clamp(cy + offset + 1, 0.3, GRID_H - 0.3) });
+      allLines.push(pts);
+    }
+  }
+
+  // === QUINTET CLUSTERS (10 lines, 2 groups of 5) — dense tension zones ===
+  for (let g = 0; g < 2; g++) {
+    const gx = g === 0 ? rand(8, 16) : rand(24, 32);
+    const gy = rand(2, GRID_H - 2);
+    for (let k = 0; k < 5; k++) {
+      const angle = (k / 5) * Math.PI * 2 + rand(-0.3, 0.3);
+      const radius = rand(2, 5);
+      const startX = gx + Math.cos(angle) * radius * 0.3;
+      const startY = gy + Math.sin(angle) * radius * 0.2;
+      const pts = [{ x: clamp(startX, 0.3, GRID_W - 0.3), y: clamp(startY, 0.3, GRID_H - 0.3) }];
+      // Spiral outward with tension
+      const numPts = 4 + Math.floor(Math.random() * 3);
+      for (let j = 1; j <= numPts; j++) {
+        const t = j / numPts;
+        const spiralAngle = angle + t * Math.PI * (1 + rand(0.3, 1.2));
+        const r = radius * (0.3 + t * 0.7);
+        const x = gx + Math.cos(spiralAngle) * r;
+        const y = gy + Math.sin(spiralAngle) * r * 0.5;
+        pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+      }
+      allLines.push(pts);
+    }
+  }
+
+  // === CHOIR LINES (11 lines) — flowing waves that create rhythm across the full width ===
+  for (let i = 0; i < 11; i++) {
+    const baseY = 1 + (i / 11) * (GRID_H - 2);
+    const phase = rand(0, Math.PI * 2);
+    const freq = rand(0.8, 2.5);
+    const amp = rand(0.5, 2);
+    const startX = rand(0.3, 3);
+    const endX = rand(37, 39.7);
+    const pts = [{ x: startX, y: clamp(baseY + Math.sin(phase) * amp * 0.3, 0.3, GRID_H - 0.3) }];
+    const numPts = 5 + Math.floor(Math.random() * 4);
+    for (let j = 1; j <= numPts; j++) {
+      const t = j / (numPts + 1);
+      const x = startX + t * (endX - startX);
+      const y = baseY + Math.sin(phase + t * Math.PI * freq) * amp;
+      pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+    }
+    pts.push({ x: endX, y: clamp(baseY + Math.sin(phase + Math.PI * freq) * amp * 0.3, 0.3, GRID_H - 0.3) });
+    allLines.push(pts);
+  }
+
+  // Place all lines
+  for (let i = 0; i < allLines.length && i < 35; i++) {
+    const line = {
+      id: uuidv4(),
+      authorId: 'ai-composer-' + i,
+      authorName: 'AI Composer ' + (i + 1),
+      color: '#fff0d8',
+      points: allLines[i]
+    };
+    proj.lines.set(line.id, line);
+    generated.lines.push(line);
+  }
+
+  // === FRAMES — placed at tension/release intersections ===
+  // Large frames at the two quintet cluster centers (diffusion zones)
+  const framePlacements = [
+    // Large frames at cluster centers
+    { x: rand(10, 14), y: rand(3, 5), w: 2, h: 2, type: 'large' },
+    { x: rand(26, 30), y: rand(3, 5), w: 2, h: 2, type: 'large' },
+    // Medium-positioned frames along the composition
+    { x: rand(4, 8), y: rand(2, 6), w: 2, h: 2, type: 'large' },
+    { x: rand(32, 37), y: rand(2, 6), w: 2, h: 2, type: 'large' },
+    // Small frames scattered for accent
+    { x: rand(6, 10), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(15, 20), y: rand(5, 7), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(20, 25), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(30, 35), y: rand(5, 7), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(12, 18), y: rand(2, 4), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(22, 28), y: rand(4, 6), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(16, 22), y: rand(1, 7), w: 2, h: 2, type: 'large' },
+    { x: rand(2, 6), y: rand(4, 7), w: 8/12, h: 8/12, type: 'small' },
+    { x: rand(34, 38), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
+  ];
+
+  for (let i = 0; i < framePlacements.length; i++) {
+    const fp = framePlacements[i];
+    const frame = {
+      id: uuidv4(),
+      authorId: 'ai-composer-frame-' + i,
+      authorName: 'AI Composer',
+      x: fp.x,
+      y: fp.y,
+      width: fp.w,
+      height: fp.h,
+      type: fp.type
+    };
+    proj.frames.set(frame.id, frame);
+    generated.frames.push(frame);
+  }
+
+  proj.totalElements = proj.lines.size + proj.frames.size;
+  saveProject(proj);
+
+  return res.json({ ok: true, lines: generated.lines.length, frames: generated.frames.length });
+});
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

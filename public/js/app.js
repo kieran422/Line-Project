@@ -1588,12 +1588,46 @@ function openProject() {
 
   // Back button only visible for admins
   backToProjects.classList.toggle('hidden', !isAdmin);
+
+  // AI Generate button only in ai-test project
+  const aiBtn = document.getElementById('ai-generate-btn');
+  if (aiBtn) aiBtn.classList.toggle('hidden', currentProjectId !== 'ai-test');
 }
 
 backToProjects.addEventListener('click', () => {
   appDiv.classList.add('hidden');
   showProjectsPage();
 });
+
+// AI Generate button
+const aiGenerateBtn = document.getElementById('ai-generate-btn');
+if (aiGenerateBtn) {
+  aiGenerateBtn.addEventListener('click', () => {
+    if (currentProjectId !== 'ai-test') return;
+    if (!confirm('Generate an AI composition? This will replace any existing AI lines in this project.')) return;
+    showToast('Generating composition...');
+    fetch('/api/ai-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: 'ai-test' })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        showToast(`Generated ${data.lines} lines and ${data.frames} frames.`);
+        // Reconnect to reload the state
+        if (socket) {
+          socket.disconnect();
+          socket.connect();
+          socket.emit('join', { name: loggedInName, email: loggedInEmail, projectId: currentProjectId });
+        }
+      } else {
+        showToast('Generation failed.');
+      }
+    })
+    .catch(() => showToast('Error generating composition.'));
+  });
+}
 
 // Projects button in toolbar (admin only)
 const projectsToggle = document.getElementById('projects-toggle');
