@@ -50,12 +50,34 @@
     </div>
   </div>
 
+  <!-- PROJECTS PAGE -->
+  <div id="projects-page" class="hidden">
+    <div class="projects-header">
+      <h2 class="projects-title">Projects</h2>
+      <span id="projects-user-label" class="user-label"></span>
+    </div>
+    <div class="projects-grid">
+      <div id="project-card" class="project-card">
+        <div class="project-thumbnail">
+          <canvas id="project-preview" width="400" height="80"></canvas>
+        </div>
+        <div class="project-info">
+          <h3 class="project-name">Collaborative Student Project</h3>
+          <p class="project-meta" id="project-meta">Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MAIN APP -->
   <div id="app" class="hidden">
 
     <!-- TOP BAR -->
     <header id="top-bar">
       <div class="top-left">
+        <button id="back-to-projects" class="back-btn" title="Back to Projects">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
         <span class="app-title">Collaboration in Line</span>
         <span id="user-label" class="user-label"></span>
       </div>

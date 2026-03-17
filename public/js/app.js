@@ -1444,6 +1444,17 @@ function initLogin() {
   });
 }
 
+const projectsPage = document.getElementById('projects-page');
+const projectCard = document.getElementById('project-card');
+const projectMeta = document.getElementById('project-meta');
+const projectPreview = document.getElementById('project-preview');
+const projectsUserLabel = document.getElementById('projects-user-label');
+const backToProjects = document.getElementById('back-to-projects');
+
+let loggedInName = '';
+let loggedInEmail = '';
+let appInitialized = false;
+
 function doLogin() {
   const name = fullNameInput.value.trim(), email = emailInput.value.trim();
   let ok = true;
@@ -1451,12 +1462,107 @@ function doLogin() {
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!emailValid) { emailInput.style.borderColor = '#cc2222'; ok = false; showToast('Please enter a valid email address.'); } else emailInput.style.borderColor = '';
   if (!ok) return;
-  loginScreen.classList.add('hidden'); appDiv.classList.remove('hidden');
-  if (window._startMusic) window._startMusic();
-  initCanvas(); initInput(); initTools(); initZoom(); initPlayhead();
-  document.querySelector('[data-tool="view"]').classList.add('active');
-  initSocket(); socket.emit('join', { name, email });
+
+  loggedInName = name;
+  loggedInEmail = email;
+
+  loginScreen.classList.add('hidden');
+  showProjectsPage();
 }
+
+function showProjectsPage() {
+  projectsPage.classList.remove('hidden');
+  appDiv.classList.add('hidden');
+  projectsUserLabel.textContent = loggedInName;
+
+  // Render a small preview thumbnail by connecting temporarily
+  renderProjectThumbnail();
+}
+
+function renderProjectThumbnail() {
+  const pc = projectPreview.getContext('2d');
+  projectPreview.width = 400;
+  projectPreview.height = 160;
+
+  // Temporarily connect to get state for thumbnail
+  const tempSocket = io();
+  tempSocket.emit('join', { name: loggedInName, email: loggedInEmail });
+  tempSocket.on('joined', (data) => {
+    const dl = data.state.lines || [];
+    const df = data.state.frames || [];
+
+    // Update meta
+    projectMeta.textContent = `${dl.length} line${dl.length !== 1 ? 's' : ''}, ${df.length} frame${df.length !== 1 ? 's' : ''}`;
+
+    // Render mini preview
+    const savedCtx = ctx, savedCanvas = canvas;
+    const savedBase = baseScale, savedZoom = zoomLevel;
+    const savedVCX = viewCenterX, savedVCY = viewCenterY;
+    const savedHover = hoveredElement, savedSel = selectedElement;
+
+    canvas = projectPreview;
+    ctx = pc;
+    baseScale = (400 - 10) / GRID_WIDTH_FT;
+    zoomLevel = 1;
+    viewCenterX = GRID_WIDTH_FT / 2;
+    viewCenterY = GRID_HEIGHT_FT / 2;
+    hoveredElement = null;
+    selectedElement = null;
+
+    // Temporarily set lines/frames for rendering
+    const savedLines = lines.slice();
+    const savedFrames = frames.slice();
+    lines.length = 0; frames.length = 0;
+    for (const l of dl) lines.push(l);
+    for (const f of df) frames.push(f);
+
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, 400, 160);
+    drawGrid();
+    drawLines(lines);
+    drawFrames(frames, lines);
+
+    // Restore everything
+    lines.length = 0; frames.length = 0;
+    for (const l of savedLines) lines.push(l);
+    for (const f of savedFrames) frames.push(f);
+
+    canvas = savedCanvas;
+    ctx = savedCtx;
+    baseScale = savedBase;
+    zoomLevel = savedZoom;
+    viewCenterX = savedVCX;
+    viewCenterY = savedVCY;
+    hoveredElement = savedHover;
+    selectedElement = savedSel;
+
+    tempSocket.disconnect();
+  });
+}
+
+function openProject() {
+  projectsPage.classList.add('hidden');
+  appDiv.classList.remove('hidden');
+
+  if (window._startMusic) window._startMusic();
+
+  if (!appInitialized) {
+    initCanvas(); initInput(); initTools(); initZoom(); initPlayhead();
+    document.querySelector('[data-tool="view"]').classList.add('active');
+    initSocket();
+    socket.emit('join', { name: loggedInName, email: loggedInEmail });
+    appInitialized = true;
+  } else {
+    resizeCanvas();
+  }
+}
+
+projectCard.addEventListener('click', openProject);
+
+backToProjects.addEventListener('click', () => {
+  appDiv.classList.add('hidden');
+  showProjectsPage();
+});
 
 // ── PDF Export ───────────────────────────────────────────────────────────────
 
