@@ -216,105 +216,156 @@ app.post('/api/ai-generate', (req, res) => {
     if (frame.authorName.startsWith('AI Composer')) proj.frames.delete(id);
   }
 
-  const GRID_W = 40, GRID_H = 8;
+  const W = 40, H = 8;
   const generated = { lines: [], frames: [] };
 
-  function rand(min, max) { return min + Math.random() * (max - min); }
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function r(a, b) { return a + Math.random() * (b - a); }
+  function c(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function pt(x, y) { return { x: c(x, 0.3, W - 0.3), y: c(y, 0.3, H - 0.3) }; }
 
-  // ── Jazz-inspired composition algorithm ──
-  // Structure: Solo lines (sparse, sweeping), Duets (paired), Quintet clusters, Choir (dense zones)
-  // Principle: Tension (compressed, close points) and Release (wide, sweeping arcs)
+  // Pick a golden-ratio based focal point (not dead center)
+  const focalX = Math.random() > 0.5 ? W * 0.382 : W * 0.618;
+  const focalY = H * (Math.random() > 0.5 ? 0.382 : 0.618);
 
   const allLines = [];
 
-  // === SOLO LINES (6 lines) — long sweeping arcs spanning most of the grid ===
-  for (let i = 0; i < 6; i++) {
-    const startX = rand(0.5, 5);
-    const startY = rand(1, GRID_H - 1);
-    const endX = rand(35, 39.5);
-    const endY = rand(1, GRID_H - 1);
-    const pts = [{ x: startX, y: startY }];
-    // 3-4 gentle undulations across the span
-    const numMid = 3 + Math.floor(Math.random() * 2);
-    for (let j = 1; j <= numMid; j++) {
-      const t = j / (numMid + 1);
-      const x = startX + t * (endX - startX) + rand(-1.5, 1.5);
-      const y = startY + t * (endY - startY) + rand(-2, 2) * Math.sin(t * Math.PI);
-      pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+  // ═══ 1. HORIZON LINES (3) — long elegant sweeps that establish the visual field ═══
+  // Art deco: confident, purposeful horizontal energy with gentle rises
+  for (let i = 0; i < 3; i++) {
+    const yBase = H * 0.25 + i * H * 0.25;
+    const rise = r(-0.8, 0.8);
+    const pts = [pt(r(0.3, 1.5), yBase + r(-0.3, 0.3))];
+    // Long slow curves with one dramatic dip or peak
+    const peakAt = r(0.3, 0.7);
+    const peakAmt = r(1.5, 3) * (i % 2 === 0 ? -1 : 1);
+    for (let t = 0.15; t <= 0.85; t += 0.12 + r(0, 0.06)) {
+      const dramaCurve = Math.exp(-Math.pow((t - peakAt) * 4, 2)) * peakAmt;
+      pts.push(pt(W * t + r(-0.5, 0.5), yBase + rise * t + dramaCurve));
     }
-    pts.push({ x: endX, y: endY });
+    pts.push(pt(r(38.5, 39.7), yBase + rise + r(-0.3, 0.3)));
     allLines.push(pts);
   }
 
-  // === DUET LINES (8 lines, 4 pairs) — two lines that mirror/complement each other ===
-  for (let pair = 0; pair < 4; pair++) {
-    const cx = rand(5, 35);
-    const cy = rand(2, GRID_H - 2);
-    const span = rand(6, 12);
-    for (let d = 0; d < 2; d++) {
-      const offset = d === 0 ? -0.4 : 0.4;
-      const startX = cx - span / 2;
-      const endX = cx + span / 2;
-      const pts = [{ x: clamp(startX, 0.3, GRID_W - 0.3), y: clamp(cy + offset - 1, 0.3, GRID_H - 0.3) }];
-      const numMid = 3 + Math.floor(Math.random() * 3);
-      for (let j = 1; j <= numMid; j++) {
-        const t = j / (numMid + 1);
-        const x = startX + t * (endX - startX);
-        const wave = Math.sin(t * Math.PI * (1.5 + pair * 0.3)) * (1.5 + rand(-0.5, 0.5));
-        const y = cy + offset + wave * (d === 0 ? 1 : -1);
-        pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
-      }
-      pts.push({ x: clamp(endX, 0.3, GRID_W - 0.3), y: clamp(cy + offset + 1, 0.3, GRID_H - 0.3) });
-      allLines.push(pts);
-    }
-  }
-
-  // === QUINTET CLUSTERS (10 lines, 2 groups of 5) — dense tension zones ===
-  for (let g = 0; g < 2; g++) {
-    const gx = g === 0 ? rand(8, 16) : rand(24, 32);
-    const gy = rand(2, GRID_H - 2);
-    for (let k = 0; k < 5; k++) {
-      const angle = (k / 5) * Math.PI * 2 + rand(-0.3, 0.3);
-      const radius = rand(2, 5);
-      const startX = gx + Math.cos(angle) * radius * 0.3;
-      const startY = gy + Math.sin(angle) * radius * 0.2;
-      const pts = [{ x: clamp(startX, 0.3, GRID_W - 0.3), y: clamp(startY, 0.3, GRID_H - 0.3) }];
-      // Spiral outward with tension
-      const numPts = 4 + Math.floor(Math.random() * 3);
-      for (let j = 1; j <= numPts; j++) {
-        const t = j / numPts;
-        const spiralAngle = angle + t * Math.PI * (1 + rand(0.3, 1.2));
-        const r = radius * (0.3 + t * 0.7);
-        const x = gx + Math.cos(spiralAngle) * r;
-        const y = gy + Math.sin(spiralAngle) * r * 0.5;
-        pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
-      }
-      allLines.push(pts);
-    }
-  }
-
-  // === CHOIR LINES (11 lines) — flowing waves that create rhythm across the full width ===
-  for (let i = 0; i < 11; i++) {
-    const baseY = 1 + (i / 11) * (GRID_H - 2);
-    const phase = rand(0, Math.PI * 2);
-    const freq = rand(0.8, 2.5);
-    const amp = rand(0.5, 2);
-    const startX = rand(0.3, 3);
-    const endX = rand(37, 39.7);
-    const pts = [{ x: startX, y: clamp(baseY + Math.sin(phase) * amp * 0.3, 0.3, GRID_H - 0.3) }];
-    const numPts = 5 + Math.floor(Math.random() * 4);
+  // ═══ 2. ART DECO ARCS (6) — bold sweeping curves, asymmetric, like sunburst rays ═══
+  // Radiate from near the focal point outward with elegant curvature
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI + r(-0.15, 0.15) + Math.PI * 0.5;
+    const startR = r(1, 3);
+    const endR = r(10, 18);
+    const pts = [pt(focalX + Math.cos(angle) * startR, focalY + Math.sin(angle) * startR * 0.5)];
+    // Elegant arc that curves and sweeps, not a straight ray
+    const bend = r(-1.5, 1.5);
+    const numPts = 6 + Math.floor(r(0, 3));
     for (let j = 1; j <= numPts; j++) {
       const t = j / (numPts + 1);
-      const x = startX + t * (endX - startX);
-      const y = baseY + Math.sin(phase + t * Math.PI * freq) * amp;
-      pts.push({ x: clamp(x, 0.3, GRID_W - 0.3), y: clamp(y, 0.3, GRID_H - 0.3) });
+      const rad = startR + t * (endR - startR);
+      const curveAngle = angle + t * bend;
+      const x = focalX + Math.cos(curveAngle) * rad;
+      const y = focalY + Math.sin(curveAngle) * rad * 0.45;
+      pts.push(pt(x, y));
     }
-    pts.push({ x: endX, y: clamp(baseY + Math.sin(phase + Math.PI * freq) * amp * 0.3, 0.3, GRID_H - 0.3) });
     allLines.push(pts);
   }
 
-  // Place all lines
+  // ═══ 3. TENSION KNOTS (8 lines, 2 clusters of 4) — dense compressed energy ═══
+  // Lines that double back, create loops, tight zigzags — the "tension" zones
+  const knot1X = focalX + r(-5, -2), knot1Y = focalY + r(-1, 1);
+  const knot2X = focalX + r(2, 5), knot2Y = focalY + r(-1, 1);
+  const knotCenters = [{ x: knot1X, y: knot1Y }, { x: knot2X, y: knot2Y }];
+
+  for (let g = 0; g < 2; g++) {
+    const kx = knotCenters[g].x, ky = knotCenters[g].y;
+    for (let k = 0; k < 4; k++) {
+      const pts = [];
+      // Start away from knot, swoop in, zigzag tightly, then release outward
+      const entryAngle = r(0, Math.PI * 2);
+      const entryDist = r(3, 6);
+      pts.push(pt(kx + Math.cos(entryAngle) * entryDist, ky + Math.sin(entryAngle) * entryDist * 0.5));
+
+      // Approach — swooping in
+      pts.push(pt(kx + Math.cos(entryAngle) * entryDist * 0.4, ky + Math.sin(entryAngle) * entryDist * 0.2 + r(-0.5, 0.5)));
+
+      // Tight zigzag through the knot (tension!)
+      const zigPts = 3 + Math.floor(r(0, 3));
+      for (let z = 0; z < zigPts; z++) {
+        const zAngle = entryAngle + Math.PI + z * r(0.8, 1.5) * (z % 2 === 0 ? 1 : -1);
+        const zr = r(0.4, 1.2);
+        pts.push(pt(kx + Math.cos(zAngle) * zr, ky + Math.sin(zAngle) * zr * 0.5));
+      }
+
+      // Release — sweep outward in opposite direction
+      const exitAngle = entryAngle + Math.PI + r(-0.5, 0.5);
+      const exitDist = r(3, 7);
+      pts.push(pt(kx + Math.cos(exitAngle) * exitDist * 0.5, ky + Math.sin(exitAngle) * exitDist * 0.25 + r(-0.3, 0.3)));
+      pts.push(pt(kx + Math.cos(exitAngle) * exitDist, ky + Math.sin(exitAngle) * exitDist * 0.45));
+
+      allLines.push(pts);
+    }
+  }
+
+  // ═══ 4. FLOWING RIVERS (6) — organic Douglas Cardinal curves, S-bends ═══
+  // Each follows an S-curve or double-S across a portion of the grid
+  for (let i = 0; i < 6; i++) {
+    const segStart = r(0, W * 0.4);
+    const segEnd = segStart + r(12, 22);
+    const yCenter = r(1.5, H - 1.5);
+    const amp = r(1.2, 3);
+    const pts = [pt(c(segStart, 0.3, W - 0.3), yCenter + r(-0.5, 0.5))];
+    // S-curve with varying frequency — organic, not mechanical
+    const freq1 = r(1.2, 2.5);
+    const freq2 = r(0.3, 0.8); // secondary wobble
+    const phase = r(0, Math.PI * 2);
+    const numPts = 7 + Math.floor(r(0, 4));
+    for (let j = 1; j <= numPts; j++) {
+      const t = j / (numPts + 1);
+      const x = segStart + t * (segEnd - segStart);
+      const primary = Math.sin(phase + t * Math.PI * freq1) * amp;
+      const secondary = Math.sin(phase * 2.7 + t * Math.PI * freq2 * 3) * amp * 0.2;
+      const y = yCenter + primary + secondary;
+      pts.push(pt(c(x, 0.3, W - 0.3), y));
+    }
+    pts.push(pt(c(segEnd, 0.3, W - 0.3), yCenter + r(-0.5, 0.5)));
+    allLines.push(pts);
+  }
+
+  // ═══ 5. ACCENT DIAGONALS (6) — bold short strokes, like calligraphy ═══
+  // Art deco geometric accents — short, decisive, creating visual stops
+  for (let i = 0; i < 6; i++) {
+    const cx = r(3, W - 3), cy = r(1, H - 1);
+    const len = r(3, 7);
+    const angle = r(-0.4, 0.4) + (i % 2 === 0 ? 0 : Math.PI * 0.15);
+    const pts = [pt(cx - Math.cos(angle) * len / 2, cy - Math.sin(angle) * len / 2)];
+    // One or two mid-points with slight curve — not straight
+    const midCount = 1 + Math.floor(r(0, 2));
+    for (let m = 1; m <= midCount; m++) {
+      const t = m / (midCount + 1);
+      const mx = cx + (t - 0.5) * Math.cos(angle) * len;
+      const my = cy + (t - 0.5) * Math.sin(angle) * len + r(-0.8, 0.8);
+      pts.push(pt(mx, my));
+    }
+    pts.push(pt(cx + Math.cos(angle) * len / 2, cy + Math.sin(angle) * len / 2));
+    allLines.push(pts);
+  }
+
+  // ═══ 6. BREATH LINES (6) — very sparse, minimal, the space between the notes ═══
+  // Just 2-3 points, long gentle droops — Miles Davis "spaces between"
+  for (let i = 0; i < 6; i++) {
+    const x1 = r(i * 6, i * 6 + 4);
+    const x2 = x1 + r(4, 8);
+    const y1 = r(0.5, H - 0.5);
+    const y2 = r(0.5, H - 0.5);
+    if (Math.random() > 0.5) {
+      // Just two points — pure gravity droop
+      allLines.push([pt(x1, y1), pt(c(x2, 0.3, W - 0.3), y2)]);
+    } else {
+      // Three points with a gentle mid sag
+      const mx = (x1 + x2) / 2 + r(-1, 1);
+      const my = Math.max(y1, y2) + r(0.5, 1.5);
+      allLines.push([pt(x1, y1), pt(mx, c(my, 0.3, H - 0.3)), pt(c(x2, 0.3, W - 0.3), y2)]);
+    }
+  }
+
+  // Place all 35 lines
   for (let i = 0; i < allLines.length && i < 35; i++) {
     const line = {
       id: uuidv4(),
@@ -327,25 +378,25 @@ app.post('/api/ai-generate', (req, res) => {
     generated.lines.push(line);
   }
 
-  // === FRAMES — placed at tension/release intersections ===
-  // Large frames at the two quintet cluster centers (diffusion zones)
+  // ═══ FRAMES — placed intentionally at compositional intersections ═══
+  // Large frames at the two tension knots (where lines converge = maximum diffusion)
+  // Small frames at golden-ratio positions and accent points
   const framePlacements = [
-    // Large frames at cluster centers
-    { x: rand(10, 14), y: rand(3, 5), w: 2, h: 2, type: 'large' },
-    { x: rand(26, 30), y: rand(3, 5), w: 2, h: 2, type: 'large' },
-    // Medium-positioned frames along the composition
-    { x: rand(4, 8), y: rand(2, 6), w: 2, h: 2, type: 'large' },
-    { x: rand(32, 37), y: rand(2, 6), w: 2, h: 2, type: 'large' },
-    // Small frames scattered for accent
-    { x: rand(6, 10), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(15, 20), y: rand(5, 7), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(20, 25), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(30, 35), y: rand(5, 7), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(12, 18), y: rand(2, 4), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(22, 28), y: rand(4, 6), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(16, 22), y: rand(1, 7), w: 2, h: 2, type: 'large' },
-    { x: rand(2, 6), y: rand(4, 7), w: 8/12, h: 8/12, type: 'small' },
-    { x: rand(34, 38), y: rand(1, 3), w: 8/12, h: 8/12, type: 'small' },
+    // Tension knot diffusion — large frames catching dense light
+    { x: knot1X, y: knot1Y, w: 2, h: 2, type: 'large' },
+    { x: knot2X, y: knot2Y, w: 2, h: 2, type: 'large' },
+    // Focal point frame
+    { x: focalX, y: focalY, w: 2, h: 2, type: 'large' },
+    // Golden ratio positions
+    { x: W * 0.236, y: H * 0.382, w: 8/12, h: 8/12, type: 'small' },
+    { x: W * 0.764, y: H * 0.618, w: 8/12, h: 8/12, type: 'small' },
+    { x: W * 0.382, y: H * 0.764, w: 8/12, h: 8/12, type: 'small' },
+    { x: W * 0.618, y: H * 0.236, w: 8/12, h: 8/12, type: 'small' },
+    // Edge accents
+    { x: r(2, 5), y: r(1.5, 3), w: 8/12, h: 8/12, type: 'small' },
+    { x: r(35, 38), y: r(5, 6.5), w: 8/12, h: 8/12, type: 'small' },
+    // Between the knots
+    { x: (knot1X + knot2X) / 2, y: (knot1Y + knot2Y) / 2 + r(-1, 1), w: 2, h: 2, type: 'large' },
   ];
 
   for (let i = 0; i < framePlacements.length; i++) {
