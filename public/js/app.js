@@ -1590,8 +1590,6 @@ function openProject() {
   backToProjects.classList.toggle('hidden', !isAdmin);
 }
 
-projectCard.addEventListener('click', openProject);
-
 backToProjects.addEventListener('click', () => {
   appDiv.classList.add('hidden');
   showProjectsPage();
